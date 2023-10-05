@@ -1,0 +1,18 @@
+[submodule "esp-idf"]
+	path = esp-idf
+	url = https://github.com/espressif/esp-idf
+[submodule "components/esp-idf-pixelflut-component"]
+	path = components/esp-idf-pixelflut-component
+	url = https://github.com/TobleMiner/esp-idf-pixelflut-component
+[submodule "components/esp-idf-gif-component"]
+	path = components/esp-idf-gif-component
+	url = https://github.com/TobleMiner/esp-idf-gif-component
+[submodule "components/esp-idf-qr-code-generator-component"]
+	path = components/esp-idf-qr-code-generator-component
+	url = https://github.com/TobleMiner/esp-idf-qr-code-generator-component.git
+[submodule "esp-idf-freetype-component"]
+	path = esp-idf-freetype-component
+	url = https://github.com/TobleMiner/esp-idf-freetype-component.git
+[submodule "components/esp-idf-freetype-component"]
+	path = components/esp-idf-freetype-component
+	url = https://github.com/TobleMiner/esp-idf-freetype-component.git
