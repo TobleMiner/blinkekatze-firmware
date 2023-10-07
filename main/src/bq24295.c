@@ -8,6 +8,7 @@
 #define REG_POWER_ON_CFG	0x01
 #define REG_CHARGE_CURRENT	0x02
 #define REG_PRE_CHARGE_TERM	0x03
+#define REG_CHARGE_CTRL		0x04
 #define REG_TERM_TIMER		0x05
 #define REG_BOOST_THERMAL	0x06
 #define REG_MISC_CTRL		0x07
@@ -151,4 +152,26 @@ esp_err_t bq24295_set_boost_voltage(bq24295_t *charger, unsigned int boost_volta
 	unsigned int boost_voltage_bits = boost_voltage_scaled << 4;
 
 	return bq24295_rmw(charger, REG_BOOST_THERMAL, 0xf0, boost_voltage_bits);
+}
+
+esp_err_t bq24295_set_battery_low_threshold(bq24295_t *charger, bq24295_battery_low_threshold_t threshold) {
+	switch (threshold) {
+	case BQ24295_BATTERY_LOW_THRESHOLD_3_0V:
+		return bq24295_rmw(charger, REG_CHARGE_CTRL, 0x00, 1 << 1);
+	case BQ24295_BATTERY_LOW_THRESHOLD_2_8V:
+		return bq24295_rmw(charger, REG_CHARGE_CTRL, 1 << 1, 0x00);
+	default:
+		return ESP_ERR_INVALID_ARG;
+	}
+}
+
+esp_err_t bq24295_set_recharge_threshold(bq24295_t *charger, bq24295_recharge_threshold_t threshold) {
+	switch (threshold) {
+	case BQ24295_RECHARGE_THRESHOLD_100MV:
+		return bq24295_rmw(charger, REG_CHARGE_CTRL, 1 << 0, 0x00);
+	case BQ24295_RECHARGE_THRESHOLD_300MV:
+		return bq24295_rmw(charger, REG_CHARGE_CTRL, 0x00, 1 << 0);
+	default:
+		return ESP_ERR_INVALID_ARG;
+	}
 }

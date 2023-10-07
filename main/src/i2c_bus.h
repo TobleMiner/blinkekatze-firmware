@@ -41,3 +41,8 @@ esp_err_t i2c_bus_write_byte(i2c_bus_t *bus, uint8_t address, uint8_t reg, uint8
 
 esp_err_t i2c_bus_scan(i2c_bus_t* bus, i2c_address_set_t addr);
 void i2c_detect(i2c_bus_t* i2c_bus);
+
+static inline esp_err_t i2c_bus_write(i2c_bus_t *bus, uint8_t address,
+				      const uint8_t *data_write, unsigned int write_len) {
+	return i2c_bus_write_then_read(bus, address, data_write, write_len, NULL, 0);
+}
