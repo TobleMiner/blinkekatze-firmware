@@ -12,8 +12,12 @@
 #include <driver/spi_master.h>
 #include <esp_log.h>
 #include <esp_mac.h>
+#include <esp_rom_gpio.h>
 #include <esp_system.h>
 #include <esp_timer.h>
+#include <hal/gpio_hal.h>
+#include <hal/gpio_ll.h>
+#include <soc/gpio_sig_map.h>
 
 #include "bq24295.h"
 #include "bq27546.h"
@@ -75,7 +79,25 @@ typedef struct node_info {
 	int16_t battery_current_ma;
 } __attribute__((packed)) node_info_t;
 
+typedef struct click {
+	int32_t velocity;
+} __attribute__((packed)) click_t;
+
 lis3dh_t accelerometer;
+static void IRAM_ATTR led_iomux_enable(spi_transaction_t *trans) {
+	esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
+/*
+	gpio_iomux_in(3, FSPID_IN_IDX);
+	gpio_iomux_out(3, SPI2_FUNC_NUM, false);
+*/
+}
+
+static void IRAM_ATTR led_iomux_disable(spi_transaction_t *trans) {
+	gpio_set_direction(3, GPIO_MODE_OUTPUT);
+	gpio_set_level(3, 0);
+	gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
+}
+
 void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
@@ -85,14 +107,14 @@ void app_main(void) {
 	gpio_set_level(GPIO_CHARGE_EN, 0);
 
 	spi_bus_config_t spi_bus_cfg = {
-		.mosi_io_num = 3,
+		.mosi_io_num = 7,
 		.miso_io_num = -1,
 		.sclk_io_num = -1,
 		.quadwp_io_num = -1,
 		.quadhd_io_num = -1,
 		.max_transfer_sz = 4092,
 		.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_GPIO_PINS,
-		.intr_flags = 0
+		.intr_flags = ESP_INTR_FLAG_IRAM
 	};
 	ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &spi_bus_cfg, SPI_DMA_CH_AUTO));
 	spi_device_interface_config_t dev_cfg = {
@@ -108,6 +130,8 @@ void app_main(void) {
 		.spics_io_num = -1,
 		.flags = SPI_DEVICE_BIT_LSBFIRST,
 		.queue_size = 1,
+		.pre_cb = led_iomux_enable,
+		.post_cb = led_iomux_disable,
 	};
 	spi_device_handle_t dev;
 	ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &dev_cfg, &dev));
@@ -185,6 +209,8 @@ void app_main(void) {
 	unsigned loop_interval_ms = 20;
 	bool transaction_pending = false;
 	uint64_t loops = 0;
+	int64_t click_time_us = 0;
+	uint32_t active_velocity = 0;
 	while (1) {
 		int64_t time_loop_start_us = esp_timer_get_time();
 		gpio_set_level(GPIO_LED1, level);
@@ -223,12 +249,69 @@ void app_main(void) {
 			transaction_pending = false;
 		}
 //		leds_set_color(led_data + BYTES_RESET, (uint32_t)b << 16 | (uint32_t)g << 8 | r);
-
+/*
 		if (delayed_clock % 1000000UL <= 100000UL) {
 			leds_set_color(led_data + BYTES_RESET, 0x101010);
 		} else {
 			leds_set_color(led_data + BYTES_RESET, 0);
 		}
+*/
+		wireless_packet_t packet;
+		if (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
+			ESP_LOGD(TAG, "Dequeued packet, size: %u bytes", packet.len);
+			if (packet.len == sizeof(node_info_t)) {
+				node_info_t node_info;
+				memcpy(&node_info, packet.data, sizeof(node_info));
+
+				ESP_LOGI(TAG, "<"MACSTR"> Uptime: %lldus, Battery voltage: %umV, Battery current: %dmA",
+					 MAC2STR(packet.src_addr), node_info.uptime_us, (unsigned int)node_info.battery_voltage_mv, (int)node_info.battery_current_ma);
+			} else if (packet.len == sizeof(neighbour_advertisement_t)) {
+				neighbour_advertisement_t adv;
+				memcpy(&adv, packet.data, sizeof(neighbour_advertisement_t));
+				neighbour_update(packet.src_addr, packet.rx_timestamp, &adv);
+			} else if (packet.len == sizeof(click_t)) {
+				click_time_us = global_clock_us;
+				click_t click;
+				memcpy(&click, packet.data, sizeof(click));
+				active_velocity = MAX(active_velocity, ABS(click.velocity));
+
+				int32_t max_brightness = 255;
+				int32_t min_brightness = 16;
+				int32_t max_velocity = 20000;
+				unsigned int brightness = min_brightness + (max_brightness - min_brightness) * active_velocity / max_velocity;
+				if (brightness > max_brightness) {
+					brightness = max_brightness;
+				}
+
+				leds_set_color(led_data + BYTES_RESET, 0x010101 * brightness);
+//				leds_set_color(led_data + BYTES_RESET, 0x101010);
+			}
+		}
+
+		lis3dh_update(&accelerometer);
+		if (lis3dh_has_click_been_detected(&accelerometer)) {
+			int32_t velocity = lis3dh_get_click_velocity(&accelerometer);
+			ESP_LOGI(TAG, "click! velocity: %ld", (long int)velocity);
+			click_time_us = global_clock_us;
+			active_velocity = MAX(active_velocity, ABS(velocity));
+			int32_t max_brightness = 255;
+			int32_t min_brightness = 16;
+			int32_t max_velocity = 20000;
+			unsigned int brightness = min_brightness + (max_brightness - min_brightness) * active_velocity / max_velocity;
+			if (brightness > max_brightness) {
+				brightness = max_brightness;
+			}
+
+			leds_set_color(led_data + BYTES_RESET, 0x010101 * brightness);
+//			leds_set_color(led_data + BYTES_RESET, 0x101010);
+			click_t click = { velocity };
+			wireless_broadcast((uint8_t*)&click, sizeof(click));
+		}
+		if (click_time_us + 100000UL < global_clock_us) {
+			leds_set_color(led_data + BYTES_RESET, 0);
+			active_velocity = 0;
+		}
+
 		bright += 10;
 		xfer.length = dma_buf_len * 8;
 		xfer.rxlength = 0;
@@ -288,24 +371,7 @@ void app_main(void) {
 			wireless_clear_scan_results();
 		}
 
-		wireless_packet_t packet;
-		if (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
-			ESP_LOGI(TAG, "Dequeued packet, size: %u bytes", packet.len);
-			if (packet.len == sizeof(node_info_t)) {
-				node_info_t node_info;
-				memcpy(&node_info, packet.data, sizeof(node_info));
-
-				ESP_LOGI(TAG, "<"MACSTR"> Uptime: %lldus, Battery voltage: %umV, Battery current: %dmA",
-					 MAC2STR(packet.src_addr), node_info.uptime_us, (unsigned int)node_info.battery_voltage_mv, (int)node_info.battery_current_ma);
-			} else if (packet.len == sizeof(neighbour_advertisement_t)) {
-				neighbour_advertisement_t adv;
-				memcpy(&adv, packet.data, sizeof(neighbour_advertisement_t));
-				neighbour_update(packet.src_addr, packet.rx_timestamp, &adv);
-			}
-		}
 		neighbour_housekeeping();
-
-		lis3dh_update(&accelerometer);
 
 		offset++;
 		offset %= HSV_HUE_STEPS;

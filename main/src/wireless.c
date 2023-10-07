@@ -23,7 +23,7 @@ static bool scan_done = false;
 static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int data_len) {
 	int64_t rx_timestamp = esp_timer_get_time();
 
-	ESP_LOGI(TAG, "Received %d bytes", data_len);
+	ESP_LOGD(TAG, "Received %d bytes", data_len);
 	if (data_len <= WIRELESS_MAX_PACKET_SIZE) {
 		wireless_packet_t packet = {
 			.rx_timestamp = rx_timestamp,
@@ -35,7 +35,7 @@ static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int da
 		if (xQueueSend(rx_queue, &packet, 0) != pdTRUE) {
 			ESP_LOGW(TAG, "RX queue overflow. Dropping packet");
 		} else {
-			ESP_LOGI(TAG, "Packet queued, %u bytes", packet.len);
+			ESP_LOGD(TAG, "Packet queued, %u bytes", packet.len);
 		}
 	}
 }
