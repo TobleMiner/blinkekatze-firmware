@@ -19,6 +19,7 @@
 #include "bq27546.h"
 #include "fast_hsv2rgb.h"
 #include "i2c_bus.h"
+#include "lis3dh.h"
 #include "neighbour.h"
 #include "neighbour_rssi_delay_model.h"
 #include "strutil.h"
@@ -74,6 +75,7 @@ typedef struct node_info {
 	int16_t battery_current_ma;
 } __attribute__((packed)) node_info_t;
 
+lis3dh_t accelerometer;
 void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
@@ -135,11 +137,11 @@ void app_main(void) {
 	gpio_set_direction(GPIO_POWER_ON, GPIO_MODE_INPUT);
 	gpio_set_pull_mode(GPIO_POWER_ON, GPIO_PULLDOWN_ONLY);
 
-	vTaskDelay(pdMS_TO_TICKS(2000));
+//	vTaskDelay(pdMS_TO_TICKS(2000));
 
 	i2c_bus_t i2c_bus;
 	i2c_bus_init(&i2c_bus, I2C_NUM_0, 0, 2, 100000);
-	i2c_detect(&i2c_bus);
+//	i2c_detect(&i2c_bus);
 
 	bq24295_t charger;
 	// Reset charger to default settings
@@ -173,6 +175,8 @@ void app_main(void) {
 	ESP_ERROR_CHECK(wireless_init());
 
 	neighbour_init();
+
+	ESP_ERROR_CHECK(lis3dh_init(&accelerometer, &i2c_bus, 0x18));
 
 	bool level = true;
 	uint8_t bright = 0;
@@ -218,10 +222,13 @@ void app_main(void) {
 			spi_device_get_trans_result(dev, &xfer_, portMAX_DELAY);
 			transaction_pending = false;
 		}
-		leds_set_color(led_data + BYTES_RESET, (uint32_t)b << 16 | (uint32_t)g << 8 | r);
+//		leds_set_color(led_data + BYTES_RESET, (uint32_t)b << 16 | (uint32_t)g << 8 | r);
 
-//		leds_set_color(led_data + BYTES_RESET, level ? 0x010101 : 0);
-
+		if (delayed_clock % 1000000UL <= 100000UL) {
+			leds_set_color(led_data + BYTES_RESET, 0x101010);
+		} else {
+			leds_set_color(led_data + BYTES_RESET, 0);
+		}
 		bright += 10;
 		xfer.length = dma_buf_len * 8;
 		xfer.rxlength = 0;
@@ -297,6 +304,8 @@ void app_main(void) {
 			}
 		}
 		neighbour_housekeeping();
+
+		lis3dh_update(&accelerometer);
 
 		offset++;
 		offset %= HSV_HUE_STEPS;
