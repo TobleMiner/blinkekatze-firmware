@@ -10,6 +10,7 @@ set(srcs
 	src/neighbour.c
 	src/neighbour_rssi_delay_model.c
 	src/neighbour_status.c
+	src/rainbow_fade.c
 	src/strutil.c
 	src/spl06.c
 	src/squish.c

@@ -86,3 +86,9 @@ unsigned int bonk_get_intensity(const bonk_t *bonk) {
 	uint32_t magnitude_clipped = MIN(MAX(bonk->last_bonk_magnitude, BONK_MIN_INTENSITY_THRESHOLD), BONK_MAX_INTENSITY_THRESHOLD);
 	return magnitude_clipped * (uint32_t)BONK_MAX_INTENSITY / (uint32_t)BONK_MAX_INTENSITY_THRESHOLD;
 }
+
+void bonk_apply(bonk_t *bonk, color_hsv_t *color) {
+	uint32_t intensity = bonk_get_intensity(bonk);
+	uint16_t brightness = intensity * HSV_VAL_MAX / BONK_MAX_INTENSITY;
+	color->v = MIN(color->v + brightness, HSV_VAL_MAX);
+}

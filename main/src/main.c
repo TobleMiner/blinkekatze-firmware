@@ -28,6 +28,7 @@
 #include "neighbour.h"
 #include "neighbour_rssi_delay_model.h"
 #include "neighbour_status.h"
+#include "rainbow_fade.h"
 #include "spl06.h"
 #include "squish.h"
 #include "strutil.h"
@@ -353,8 +354,10 @@ void app_main(void) {
 		bonk_update(&bonk);
 		unsigned int bonk_intensity = bonk_get_intensity(&bonk);
 
-		color_hsv_t hsv;
-		hsv.v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
+		color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 10 };
+		rainbow_fade_apply(&hsv);
+		bonk_apply(&bonk, &hsv);
+//		hsv.v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
 		squish_apply(&squish, &hsv);
 //		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
 		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);

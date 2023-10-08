@@ -8,8 +8,8 @@
 #define NUM_PRESSURE_SAMPLES_DISCARD	 5
 #define NUM_PRESSURE_SAMPLES_INIT	20
 
-#define MAX_SQUISHEDNESS		50000
-#define SQUISH_FACTOR			8
+#define MAX_SQUISHEDNESS		25000
+#define SQUISH_FACTOR			2
 #define SQUISH_RECOVERY_INTERVAL_MS	3000
 
 static const char *TAG = "squish";
@@ -61,21 +61,36 @@ esp_err_t squish_update(squish_t *squish) {
 }
 
 void squish_apply(const squish_t *squish, color_hsv_t *color) {
-	const int32_t initial_hue = 40 << 5;
+	/*
+	 * Squishing is a three step process:
+	 *  1. Desaturate current color to white (0 - 1/5 squish)
+	 *  2. Change color from white to red and saturate (1/5 - 3/5 squish)
+	 *  3. Change color from red to blue (3/5 - full squish)
+	 */
+//	const int32_t mid_hue = 40 << 5;
+	const int32_t mid_hue = HSV_HUE_MAX;
 	const int32_t mid_saturation = 220 << 8;
+//	const int32_t mid_saturation = 0;
 	const int32_t final_hue = 845 << 5;
 	const int32_t final_saturation = 200 << 8;
+//	const int32_t final_saturation = HSV_SAT_MAX;
 	int32_t bend = squish->squishedness;
-	if (bend <= MAX_SQUISHEDNESS / 2) {
-		color->h = initial_hue;
-		color->s = mid_saturation * bend  / (MAX_SQUISHEDNESS / 2);
+	const int32_t scale1 = MAX_SQUISHEDNESS / 5;
+	const int32_t scale2 = MAX_SQUISHEDNESS * 2 / 5;
+	const int32_t scale3 = MAX_SQUISHEDNESS * 2 / 5;
+	if (bend <= scale1) {
+		/* Desaturate to white */
+		color->s -= (int32_t)color->s * bend  / scale1;
+	} else if (bend <= scale1 + scale2) {
+		/* Force to red and saturate */
+		int32_t local_bend = bend - scale1;
+		color->h = mid_hue;
+		color->s = mid_saturation * local_bend / scale2;
 	} else {
-		int32_t local_bend = bend - MAX_SQUISHEDNESS / 2;
-		int32_t hue = ((int32_t)(initial_hue - (initial_hue + HSV_HUE_STEPS - final_hue) * local_bend / (MAX_SQUISHEDNESS / 2)));
-		if (hue < 0) {
-			hue = HSV_HUE_STEPS + hue;
-		}
-		color->h = hue;
-		color->s = mid_saturation - (mid_saturation - final_saturation) * local_bend / 500;
+		/* Morph to blue */
+		int32_t local_bend = bend - scale1 - scale2;
+		color->h = mid_hue + (final_hue - mid_hue) * local_bend / scale3;
+		color->s = mid_saturation + (final_saturation - mid_saturation) * local_bend / scale2;
+		ESP_LOGI(TAG, "Saturation: %u, local_bend: %ld, scale2: %ld", color->s, local_bend, scale2);
 	}
 }
