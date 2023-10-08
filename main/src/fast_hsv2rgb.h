@@ -26,15 +26,7 @@
 
 #include <stdint.h>
 
-#define HSV_HUE_SEXTANT		8192
-#define HSV_HUE_STEPS		(6 * HSV_HUE_SEXTANT)
-
-#define HSV_HUE_MIN		0
-#define HSV_HUE_MAX		(HSV_HUE_STEPS - 1)
-#define HSV_SAT_MIN		0
-#define HSV_SAT_MAX		65535
-#define HSV_VAL_MIN		0
-#define HSV_VAL_MAX		65535
+#include "color.h"
 
 /* Options: */
 #define HSV_USE_SEXTANT_TEST	/* Limit the hue to 0...360 degrees */

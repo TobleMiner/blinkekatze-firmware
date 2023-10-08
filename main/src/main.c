@@ -28,6 +28,7 @@
 #include "neighbour.h"
 #include "neighbour_rssi_delay_model.h"
 #include "spl06.h"
+#include "squish.h"
 #include "strutil.h"
 #include "util.h"
 #include "wireless.h"
@@ -129,31 +130,6 @@ static void IRAM_ATTR led_iomux_disable(spi_transaction_t *trans) {
 	gpio_set_direction(3, GPIO_MODE_OUTPUT);
 	gpio_set_level(3, 0);
 	gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
-}
-
-static void color_bend_to_hs(unsigned int bend, uint16_t *h, uint16_t *s) {
-	unsigned int initial_sat = 0;
-//	unsigned int initial_hue = 348; // of 360
-	int initial_hue = 40 << 5; // of 1536
-//	unsigned int mid_saturation = 31; // of 100
-	unsigned int mid_saturation = 220 << 8; // of 255
-//	unsigned int final_hue = 197; // of 360
-	int32_t final_hue = 845 << 5; // of 360
-	unsigned int final_saturation = 200 << 8; // of 255
-
-	if (bend <= 500) {
-		*h = initial_hue;
-		*s = mid_saturation * bend  / 500;
-	} else {
-		int32_t local_bend = bend - 500;
-		int32_t hue = ((int32_t)(initial_hue - (initial_hue + HSV_HUE_STEPS - final_hue) * local_bend / 500));
-		if (hue < 0) {
-			hue = HSV_HUE_STEPS + hue;
-		}
-		*h = hue;
-//		*s = 220;
-		*s = mid_saturation - (mid_saturation - final_saturation) * local_bend / 500;
-	}
 }
 
 static uint16_t hue_g = 0;
@@ -299,13 +275,14 @@ void app_main(void) {
 
 	neighbour_init();
 
-	spl06_t barometer;
-	ESP_ERROR_CHECK(spl06_init(&barometer, SPI2_HOST, 9));
-
 	ESP_ERROR_CHECK(lis3dh_init(&accelerometer, &i2c_bus, 0x18));
-
 	bonk_t bonk;
 	bonk_init(&bonk, &accelerometer);
+
+	spl06_t barometer;
+	ESP_ERROR_CHECK(spl06_init(&barometer, SPI2_HOST, 9));
+	squish_t squish;
+	squish_init(&squish, &barometer);
 
 //	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
 
@@ -316,10 +293,6 @@ void app_main(void) {
 	unsigned loop_interval_ms = 20;
 	bool transaction_pending = false;
 	uint64_t loops = 0;
-	unsigned int color_bend = 0; // max 1000
-	int32_t last_pressure = -1;
-	int32_t pressure_at_rest = -1;
-	unsigned int pressure_samples = 0;
 	while (1) {
 		int64_t time_loop_start_us = esp_timer_get_time();
 		gpio_set_level(GPIO_LED1, level);
@@ -359,42 +332,8 @@ void app_main(void) {
 			transaction_pending = false;
 		}
 
-		spl06_update(&barometer);
-		int32_t pressure = spl06_get_pressure(&barometer);
-//		ESP_LOGI(TAG, "Pressure: %ld", pressure);
-		if (pressure_samples < 20) {
-			if (pressure_samples == 3) {
-				pressure_at_rest = pressure;
-			} else if (pressure_samples > 3) {
-				pressure_at_rest = (pressure_at_rest * 8 + pressure * 2) / 10;
-			}
-			pressure_samples++;
-		} else {
-			int32_t delta = pressure_at_rest - pressure;
+		squish_update(&squish);
 
-			if (delta > 0) {
-				color_bend = MIN(color_bend + delta / 8192, 1000);
-			}
-		}
-/*
-		if (last_pressure != -1) {
-			int32_t delta = pressure - last_pressure;
-
-			if (delta > 0) {
-				color_bend = MIN(color_bend + delta / 256, 1000);
-			}
-		}
-*/
-		last_pressure = pressure;
-
-//		leds_set_color(led_data + BYTES_RESET, (uint32_t)b << 16 | (uint32_t)g << 8 | r);
-/*
-		if (delayed_clock % 1000000UL <= 100000UL) {
-			leds_set_color(led_data + BYTES_RESET, 0x101010);
-		} else {
-			leds_set_color(led_data + BYTES_RESET, 0);
-		}
-*/
 		wireless_packet_t packet;
 		if (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
 			ESP_LOGD(TAG, "Dequeued packet, size: %u bytes", packet.len);
@@ -417,16 +356,12 @@ void app_main(void) {
 		bonk_update(&bonk);
 		unsigned int bonk_intensity = bonk_get_intensity(&bonk);
 
-		if (color_bend > 0) {
-			color_bend -= MIN(color_bend, 4);
-		}
-
-		uint16_t h, s;
-		uint16_t v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
-		color_bend_to_hs(color_bend, &h, &s);
+		color_hsv_t hsv;
+		hsv.v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
+		squish_apply(&squish, &hsv);
 //		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
 //		fast_hsv2rgb_32bit(hue_g, HSV_SAT_MAX, HSV_VAL_MAX / 10, &r, &g, &b);
-		fast_hsv2rgb_32bit(h, s, v, &r, &g, &b);
+		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
 		leds_set_color(led_data + BYTES_RESET, r >> 4, g >> 4, b >> 4);
 //		leds_set_color(led_data + BYTES_RESET, 0x01, 0x10, 0x08);
 //		leds_set_color(led_data + BYTES_RESET, (uint32_t)gamma_table[b] << 16 | (uint32_t)gamma_table[g] << 8 | gamma_table[r]);
@@ -496,8 +431,6 @@ void app_main(void) {
 		offset %= HSV_HUE_STEPS;
 //		hue_g += 32;
 //		hue_g %= HSV_HUE_STEPS;
-//		color_bend += 5;
-//		color_bend %= 1000;
 		int64_t time_loop_end_us = esp_timer_get_time();
 		int dt_ms = DIV_ROUND(time_loop_end_us - time_loop_start_us, 1000);
 		if (dt_ms > loop_interval_ms) {
