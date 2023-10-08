@@ -1,4 +1,5 @@
 set(srcs
+	src/bonk.c
 	src/bq24295.c
 	src/bq27546.c
 	${BUILD_DIR}/bq27546_inr18650_df.c

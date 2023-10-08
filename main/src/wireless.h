@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -10,6 +12,10 @@
 #include <esp_wifi_types.h>
 
 #define WIRELESS_MAX_PACKET_SIZE	64
+
+typedef enum wireless_packet_type {
+	WIRELESS_PACKET_TYPE_BONK = 0,
+} wireless_packet_type_t;
 
 typedef struct wireless_packet {
 	int64_t rx_timestamp;

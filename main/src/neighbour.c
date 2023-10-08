@@ -39,6 +39,10 @@ static neighbour_t *find_neighbour(const uint8_t *address) {
 	return NULL;
 }
 
+const neighbour_t *neighbour_find_by_address(const uint8_t *address) {
+	return find_neighbour(address);
+}
+
 static int64_t get_uptime_us(neighbour_t *neigh, int64_t now) {
 	int64_t offset = now - neigh->last_local_adv_rx_timestamp_us;
 
@@ -82,7 +86,7 @@ esp_err_t neighbour_update(const uint8_t *address, int64_t timestamp_us, const n
 		}
 		INIT_LIST_HEAD(neigh->list);
 		memcpy(neigh->address, address, sizeof(neigh->address));
-		neigh->local_to_global_time_offset = 0;
+		neigh->local_to_remote_time_offset = 0;
 		LIST_APPEND(&neigh->list, &neighbours.neighbours);
 	}
 
@@ -105,7 +109,7 @@ void neighbour_housekeeping() {
 			LIST_DELETE(&neigh->list);
 			free(neigh);
 		} else {
-			neigh->local_to_global_time_offset = global_clock - get_uptime_us(neigh, now);
+			neigh->local_to_remote_time_offset = now - get_uptime_us(neigh, now);
 		}
 	}
 
@@ -140,4 +144,12 @@ esp_err_t neighbour_update_rssi(const uint8_t *address, int rssi) {
 	ESP_LOGI(TAG, "Updating RSSI of neighbour "MACSTR" to %d", MAC2STR(neigh->address), rssi);
 	neigh->rssi = rssi;
 	return ESP_OK;
+}
+
+int64_t neighbour_remote_to_local_time(const neighbour_t *neigh, int64_t remote_timestamp) {
+	if (!neigh) {
+		return remote_timestamp;
+	}
+
+	return remote_timestamp + neigh->local_to_remote_time_offset;
 }

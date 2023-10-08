@@ -283,7 +283,7 @@ static int32_t get_click_velocity_channel(unsigned int channel, lis3dh_sample_t 
 	return velocity;
 }
 
-uint32_t lis3dh_get_click_velocity(lis3dh_t *lis) {
+int32_t lis3dh_get_click_velocity(lis3dh_t *lis) {
 //	int32_t velocity_x = get_click_velocity_channel(0, lis->fifo_buf, ARRAY_SIZE(lis->fifo_buf));
 //	int32_t velocity_y = get_click_velocity_channel(1, lis->fifo_buf, ARRAY_SIZE(lis->fifo_buf));
 	int32_t velocity_z = get_click_velocity_channel(2, lis->fifo_buf, ARRAY_SIZE(lis->fifo_buf));

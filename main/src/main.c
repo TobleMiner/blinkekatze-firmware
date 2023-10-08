@@ -19,6 +19,7 @@
 #include <hal/gpio_ll.h>
 #include <soc/gpio_sig_map.h>
 
+#include "bonk.h"
 #include "bq24295.h"
 #include "bq27546.h"
 #include "fast_hsv2rgb.h"
@@ -97,10 +98,6 @@ typedef struct node_info {
 	int16_t battery_voltage_mv;
 	int16_t battery_current_ma;
 } __attribute__((packed)) node_info_t;
-
-typedef struct click {
-	int32_t velocity;
-} __attribute__((packed)) click_t;
 
 lis3dh_t accelerometer;
 static void IRAM_ATTR led_iomux_enable(spi_transaction_t *trans) {
@@ -290,6 +287,9 @@ void app_main(void) {
 
 	ESP_ERROR_CHECK(lis3dh_init(&accelerometer, &i2c_bus, 0x18));
 
+	bonk_t bonk;
+	bonk_init(&bonk, &accelerometer);
+
 //	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
 
 	bool level = true;
@@ -299,8 +299,6 @@ void app_main(void) {
 	unsigned loop_interval_ms = 20;
 	bool transaction_pending = false;
 	uint64_t loops = 0;
-	int64_t click_time_us = 0;
-	uint32_t active_velocity = 0;
 	unsigned int color_bend = 0; // max 1000
 	int32_t last_pressure = -1;
 	int32_t pressure_at_rest = -1;
@@ -383,6 +381,7 @@ void app_main(void) {
 		wireless_packet_t packet;
 		if (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
 			ESP_LOGD(TAG, "Dequeued packet, size: %u bytes", packet.len);
+			const neighbour_t *neigh = neighbour_find_by_address(packet.src_addr);
 			if (packet.len == sizeof(node_info_t)) {
 				node_info_t node_info;
 				memcpy(&node_info, packet.data, sizeof(node_info));
@@ -393,48 +392,13 @@ void app_main(void) {
 				neighbour_advertisement_t adv;
 				memcpy(&adv, packet.data, sizeof(neighbour_advertisement_t));
 				neighbour_update(packet.src_addr, packet.rx_timestamp, &adv);
-			} else if (packet.len == sizeof(click_t)) {
-				click_time_us = global_clock_us;
-				click_t click;
-				memcpy(&click, packet.data, sizeof(click));
-				active_velocity = MAX(active_velocity, ABS(click.velocity));
-
-				int32_t max_brightness = 255;
-				int32_t min_brightness = 16;
-				int32_t max_velocity = 20000;
-				unsigned int brightness = min_brightness + (max_brightness - min_brightness) * active_velocity / max_velocity;
-				if (brightness > max_brightness) {
-					brightness = max_brightness;
-				}
-
-				leds_set_color(led_data + BYTES_RESET, 0x010101 * brightness);
-//				leds_set_color(led_data + BYTES_RESET, 0x101010);
+			} else if (packet.len == 13) {
+				bonk_rx(&bonk, &packet, neigh);
 			}
 		}
 
-		lis3dh_update(&accelerometer);
-		if (lis3dh_has_click_been_detected(&accelerometer)) {
-			int32_t velocity = lis3dh_get_click_velocity(&accelerometer);
-			ESP_LOGI(TAG, "click! velocity: %ld", (long int)velocity);
-			click_time_us = global_clock_us;
-			active_velocity = MAX(active_velocity, ABS(velocity));
-			int32_t max_brightness = 255;
-			int32_t min_brightness = 16;
-			int32_t max_velocity = 20000;
-			unsigned int brightness = min_brightness + (max_brightness - min_brightness) * active_velocity / max_velocity;
-			if (brightness > max_brightness) {
-				brightness = max_brightness;
-			}
-
-			leds_set_color(led_data + BYTES_RESET, 0x010101 * brightness);
-//			leds_set_color(led_data + BYTES_RESET, 0x101010);
-			click_t click = { velocity };
-			wireless_broadcast((uint8_t*)&click, sizeof(click));
-		}
-		if (click_time_us + 100000UL < global_clock_us) {
-			leds_set_color(led_data + BYTES_RESET, 0);
-			active_velocity = 0;
-		}
+		bonk_update(&bonk);
+		unsigned int bonk_intensity = bonk_get_intensity(&bonk);
 
 		if (color_bend > 0) {
 			color_bend -= MIN(color_bend, 4);
@@ -442,9 +406,10 @@ void app_main(void) {
 
 		uint16_t h;
 		uint8_t s;
+		uint8_t v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
 		color_bend_to_hs(color_bend, &h, &s);
 //		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
-		fast_hsv2rgb_32bit(h, s, HSV_VAL_MAX / 10, &r, &g, &b);
+		fast_hsv2rgb_32bit(h, s, v, &r, &g, &b);
 		leds_set_color(led_data + BYTES_RESET, (uint32_t)b << 16 | (uint32_t)g << 8 | r);
 //		leds_set_color(led_data + BYTES_RESET, (uint32_t)gamma_table[b] << 16 | (uint32_t)gamma_table[g] << 8 | gamma_table[r]);
 
