@@ -15,6 +15,8 @@
 
 typedef enum wireless_packet_type {
 	WIRELESS_PACKET_TYPE_BONK = 0,
+	WIRELESS_PACKET_TYPE_NEIGHBOUR_ADVERTISEMENT = 1,
+	WIRELESS_PACKET_TYPE_NEIGHBOUR_STATUS = 2,
 } wireless_packet_type_t;
 
 typedef struct wireless_packet {

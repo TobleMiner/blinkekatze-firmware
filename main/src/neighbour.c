@@ -96,6 +96,18 @@ esp_err_t neighbour_update(const uint8_t *address, int64_t timestamp_us, const n
 	return ESP_OK;
 }
 
+esp_err_t neighbour_rx(const wireless_packet_t *packet) {
+	neighbour_advertisement_t adv;
+	if (packet->len < sizeof(adv)) {
+		ESP_LOGD(TAG, "Got short advertisment packet, expected %u bytes but got %u bytes",
+			 sizeof(adv), packet->len);
+		return ESP_ERR_INVALID_ARG;
+	}
+	memcpy(&adv, packet->data, sizeof(adv));
+
+	return neighbour_update(packet->src_addr, packet->rx_timestamp, &adv);
+}
+
 void neighbour_housekeeping() {
 	int64_t now = esp_timer_get_time();
 	int64_t global_clock = get_global_clock(now, NULL);
@@ -117,6 +129,7 @@ void neighbour_housekeeping() {
 		now = esp_timer_get_time();
 		global_clock = get_global_clock(now, NULL);
 		neighbour_advertisement_t adv = {
+			WIRELESS_PACKET_TYPE_NEIGHBOUR_ADVERTISEMENT,
 			now,
 			global_clock
 		};
@@ -152,4 +165,8 @@ int64_t neighbour_remote_to_local_time(const neighbour_t *neigh, int64_t remote_
 	}
 
 	return remote_timestamp + neigh->local_to_remote_time_offset;
+}
+
+int64_t neighbour_get_uptime(const neighbour_t *neigh) {
+	return get_uptime_us(neigh, esp_timer_get_time());
 }

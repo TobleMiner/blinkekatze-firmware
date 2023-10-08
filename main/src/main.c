@@ -27,6 +27,7 @@
 #include "lis3dh.h"
 #include "neighbour.h"
 #include "neighbour_rssi_delay_model.h"
+#include "neighbour_status.h"
 #include "spl06.h"
 #include "squish.h"
 #include "strutil.h"
@@ -110,12 +111,6 @@ static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
 		data = led_set_color(data, local_r, local_g, local_b);
 	}
 }
-
-typedef struct node_info {
-	int64_t uptime_us;
-	int16_t battery_voltage_mv;
-	int16_t battery_current_ma;
-} __attribute__((packed)) node_info_t;
 
 lis3dh_t accelerometer;
 static void IRAM_ATTR led_iomux_enable(spi_transaction_t *trans) {
@@ -271,6 +266,8 @@ void app_main(void) {
 
 	ESP_ERROR_CHECK(wireless_init());
 
+	neighbour_status_init(&gauge);
+
 	neighbour_init();
 
 	ESP_ERROR_CHECK(lis3dh_init(&accelerometer, &i2c_bus, 0x18));
@@ -334,19 +331,22 @@ void app_main(void) {
 		wireless_packet_t packet;
 		if (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
 			ESP_LOGD(TAG, "Dequeued packet, size: %u bytes", packet.len);
-			const neighbour_t *neigh = neighbour_find_by_address(packet.src_addr);
-			if (packet.len == sizeof(node_info_t)) {
-				node_info_t node_info;
-				memcpy(&node_info, packet.data, sizeof(node_info));
-
-				ESP_LOGI(TAG, "<"MACSTR"> Uptime: %lums, Battery voltage: %umV, Battery current: %dmA",
-					 MAC2STR(packet.src_addr), (uint32_t)node_info.uptime_us / 1000, (unsigned int)node_info.battery_voltage_mv, (int)node_info.battery_current_ma);
-			} else if (packet.len == sizeof(neighbour_advertisement_t)) {
-				neighbour_advertisement_t adv;
-				memcpy(&adv, packet.data, sizeof(neighbour_advertisement_t));
-				neighbour_update(packet.src_addr, packet.rx_timestamp, &adv);
-			} else if (packet.len == 13) {
-				bonk_rx(&bonk, &packet, neigh);
+			if (packet.len >= 1) {
+				const neighbour_t *neigh = neighbour_find_by_address(packet.src_addr);
+				uint8_t packet_type = packet.data[0];
+				switch (packet_type) {
+				case WIRELESS_PACKET_TYPE_BONK:
+					bonk_rx(&bonk, &packet, neigh);
+					break;
+				case WIRELESS_PACKET_TYPE_NEIGHBOUR_ADVERTISEMENT:
+					neighbour_rx(&packet);
+					break;
+				case WIRELESS_PACKET_TYPE_NEIGHBOUR_STATUS:
+					neighbour_status_rx(&packet, neigh);
+					break;
+				default:
+					ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
+				}
 			}
 		}
 
@@ -368,30 +368,11 @@ void app_main(void) {
 		ESP_ERROR_CHECK(spi_device_queue_trans(dev, &xfer, 0));
 		transaction_pending = true;
 
+		neighbour_status_update();
+
 		if (loops % 500 == 0) {
 			// Charger watchdog reset
 			bq24295_watchdog_reset(&charger);
-
-			unsigned int battery_voltage_mv = 0;
-			int val = bq27546_get_voltage_mv(&gauge);
-			if (val > 0) {
-				battery_voltage_mv = val;
-			}
-			int battery_current_ma = 0;
-			bq27546_get_current_ma(&gauge, &battery_current_ma);
-
-			node_info_t node_info = {
-				.uptime_us = esp_timer_get_time(),
-				.battery_voltage_mv = battery_voltage_mv,
-				.battery_current_ma = battery_current_ma
-			};
-
-			esp_err_t err = wireless_broadcast((uint8_t*)&node_info, sizeof(node_info));
-			if (err) {
-				ESP_LOGE(TAG, "Failed to send status inforamtion: %d", err);
-			} else {
-				ESP_LOGI(TAG, "Status information sent");
-			}
 		}
 
 		if (loops % 500 == 250) {
