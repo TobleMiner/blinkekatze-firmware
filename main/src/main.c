@@ -80,16 +80,33 @@ static uint8_t *led_set_color_component(uint8_t *data, uint8_t val) {
 	return data;
 }
 
-static uint8_t *led_set_color(uint8_t *data, uint32_t rgb_) {
-	data = led_set_color_component(data, (rgb_ & 0x00ff00) >> 8);
-	data = led_set_color_component(data, (rgb_ & 0x0000ff) >> 0);
-	data = led_set_color_component(data, (rgb_ & 0xff0000) >> 16);
+static uint8_t *led_set_color(uint8_t *data, uint8_t r, uint8_t g, uint8_t b) {
+	data = led_set_color_component(data, g);
+	data = led_set_color_component(data, r);
+	data = led_set_color_component(data, b);
 	return data;
 }
 
-static void leds_set_color(uint8_t *data, uint32_t rgb_) {
+#define GLOBAL_BRIGHT(comp) ((comp) > NUM_LEDS ? (comp) >> 4 : 0)
+#define LOCAL_BRIGHT(comp, i_) (GLOBAL_BRIGHT(comp) + (i < (comp - (GLOBAL_BRIGHT(comp) << 4)) ? 1 : 0))
+
+static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
+/*
 	for (int i = 0; i < NUM_LEDS; i++) {
-		data = led_set_color(data, rgb_);
+		uint8_t local_r = MIN(r, 255);
+		uint8_t local_g = MIN(g, 255);
+		uint8_t local_b = MIN(b, 255);
+		data = led_set_color(data, local_r, local_g, local_b);
+		r -= local_r;
+		g -= local_g;
+		b -= local_b;
+	}
+*/
+	for (int i = 0; i < NUM_LEDS; i++) {
+		uint8_t local_r = LOCAL_BRIGHT(r, i);
+		uint8_t local_g = LOCAL_BRIGHT(g, i);
+		uint8_t local_b = LOCAL_BRIGHT(b, i);
+		data = led_set_color(data, local_r, local_g, local_b);
 	}
 }
 
@@ -114,22 +131,22 @@ static void IRAM_ATTR led_iomux_disable(spi_transaction_t *trans) {
 	gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
 }
 
-static void color_bend_to_hs(unsigned int bend, uint16_t *h, uint8_t *s) {
+static void color_bend_to_hs(unsigned int bend, uint16_t *h, uint16_t *s) {
 	unsigned int initial_sat = 0;
 //	unsigned int initial_hue = 348; // of 360
-	int initial_hue = 40; // of 1536
+	int initial_hue = 40 << 5; // of 1536
 //	unsigned int mid_saturation = 31; // of 100
-	unsigned int mid_saturation = 220; // of 255
+	unsigned int mid_saturation = 220 << 8; // of 255
 //	unsigned int final_hue = 197; // of 360
-	int final_hue = 845; // of 360
-	unsigned int final_saturation = 200; // of 255
+	int32_t final_hue = 845 << 5; // of 360
+	unsigned int final_saturation = 200 << 8; // of 255
 
 	if (bend <= 500) {
 		*h = initial_hue;
 		*s = mid_saturation * bend  / 500;
 	} else {
-		int local_bend = bend - 500;
-		int hue = ((int)(initial_hue - (initial_hue + HSV_HUE_STEPS - final_hue) * local_bend / 500));
+		int32_t local_bend = bend - 500;
+		int32_t hue = ((int32_t)(initial_hue - (initial_hue + HSV_HUE_STEPS - final_hue) * local_bend / 500));
 		if (hue < 0) {
 			hue = HSV_HUE_STEPS + hue;
 		}
@@ -225,7 +242,7 @@ void app_main(void) {
 	memset(led_data, 0, dma_buf_len);
 
 //	leds_set_color(led_data + BYTES_RESET, 0xffffff);
-	leds_set_color(led_data + BYTES_RESET, 0x000000);
+	leds_set_color(led_data + BYTES_RESET, 0x00, 0x00, 0x00);
 
 	spi_transaction_t xfer = {
 		.length = dma_buf_len * 8,
@@ -322,7 +339,7 @@ void app_main(void) {
 			shutdown = false;
 		}
 
-		uint8_t r, g, b;
+		uint16_t r, g, b;
 		neighbour_t *clock_source;
 		int64_t global_clock_us = neighbour_get_global_clock_and_source(&clock_source);
 		neighbour_rssi_delay_model_t delay_model = {
@@ -335,7 +352,7 @@ void app_main(void) {
 		int64_t delayed_clock = global_clock_us - clock_delay;
 		unsigned int hue = ((((uint64_t)delayed_clock / 1000UL) * HSV_HUE_STEPS) / 5000) % HSV_HUE_STEPS;
 //		ESP_LOGI(TAG, "Hue: %u", hue * 360 / HSV_HUE_STEPS);
-		fast_hsv2rgb_32bit(hue, HSV_SAT_MAX, HSV_VAL_MAX / 10, &r, &g, &b);
+//		fast_hsv2rgb_32bit(hue, HSV_SAT_MAX, HSV_VAL_MAX / 10, &r, &g, &b);
 		spi_transaction_t *xfer_;
 		if (transaction_pending) {
 			spi_device_get_trans_result(dev, &xfer_, portMAX_DELAY);
@@ -404,13 +421,14 @@ void app_main(void) {
 			color_bend -= MIN(color_bend, 4);
 		}
 
-		uint16_t h;
-		uint8_t s;
-		uint8_t v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
+		uint16_t h, s;
+		uint16_t v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
 		color_bend_to_hs(color_bend, &h, &s);
 //		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
+//		fast_hsv2rgb_32bit(hue_g, HSV_SAT_MAX, HSV_VAL_MAX / 10, &r, &g, &b);
 		fast_hsv2rgb_32bit(h, s, v, &r, &g, &b);
-		leds_set_color(led_data + BYTES_RESET, (uint32_t)b << 16 | (uint32_t)g << 8 | r);
+		leds_set_color(led_data + BYTES_RESET, r >> 4, g >> 4, b >> 4);
+//		leds_set_color(led_data + BYTES_RESET, 0x01, 0x10, 0x08);
 //		leds_set_color(led_data + BYTES_RESET, (uint32_t)gamma_table[b] << 16 | (uint32_t)gamma_table[g] << 8 | gamma_table[r]);
 
 		bright += 10;
@@ -476,6 +494,8 @@ void app_main(void) {
 
 		offset++;
 		offset %= HSV_HUE_STEPS;
+//		hue_g += 32;
+//		hue_g %= HSV_HUE_STEPS;
 //		color_bend += 5;
 //		color_bend %= 1000;
 		int64_t time_loop_end_us = esp_timer_get_time();

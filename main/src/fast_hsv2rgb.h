@@ -26,15 +26,15 @@
 
 #include <stdint.h>
 
-#define HSV_HUE_SEXTANT		256
+#define HSV_HUE_SEXTANT		8192
 #define HSV_HUE_STEPS		(6 * HSV_HUE_SEXTANT)
 
 #define HSV_HUE_MIN		0
 #define HSV_HUE_MAX		(HSV_HUE_STEPS - 1)
 #define HSV_SAT_MIN		0
-#define HSV_SAT_MAX		255
+#define HSV_SAT_MAX		65535
 #define HSV_VAL_MIN		0
-#define HSV_VAL_MAX		255
+#define HSV_VAL_MAX		65535
 
 /* Options: */
 #define HSV_USE_SEXTANT_TEST	/* Limit the hue to 0...360 degrees */
@@ -44,8 +44,7 @@
 extern "C" {
 #endif
 
-void fast_hsv2rgb_8bit(uint16_t h, uint8_t s, uint8_t v, uint8_t *r, uint8_t *g , uint8_t *b);
-void fast_hsv2rgb_32bit(uint16_t h, uint8_t s, uint8_t v, uint8_t *r, uint8_t *g , uint8_t *b);
+void fast_hsv2rgb_32bit(uint16_t h, uint16_t s, uint16_t v, uint16_t *r, uint16_t *g , uint16_t *b);
 
 #ifdef __cplusplus
 }
@@ -98,7 +97,7 @@ void fast_hsv2rgb_32bit(uint16_t h, uint8_t s, uint8_t v, uint8_t *r, uint8_t *g
  * 		r <-> g
  * }
  */
-#define HSV_SWAPPTR(a,b)	do { uint8_t *tmp = (a); (a) = (b); (b) = tmp; } while(0)
+#define HSV_SWAPPTR(a,b)	do { uint16_t *tmp = (a); (a) = (b); (b) = tmp; } while(0)
 #define HSV_POINTER_SWAP(sextant,r,g,b) \
   do { \
     if((sextant) & 2) { \
@@ -117,66 +116,4 @@ void fast_hsv2rgb_32bit(uint16_t h, uint8_t s, uint8_t v, uint8_t *r, uint8_t *g
       } \
     } \
   } while(0)
-
-
-#if defined(HSV_USE_ASSEMBLY)
-
-#if defined(__AVR_HAVE_MUL__)
-/* Multiply instruction available */
-#define MUL(ra,rb,pfx) \
-    "mul	" ra ", " rb "\n\t"
-#else /* defined(__AVR_HAVE_MUL__) */
-/*
- * Small AVR cores (f.x. ATtiny and ATmega*u2) do not have a mul instruction.
- * It is available from the avr4 architecture.
- *
- * Multiply: r1:r0 = ra * rb (clobbers r19, r17, r16)
- * Algorithm:
- * uint16_t mul(uint8_t ra, uint8_t rb)
- * {
- *	r1:r0   = 0
- *	r19     = ra
- *	r17:r16 = rb
- *	do {
- *		if(r19 & 1)
- *			r1:r0 += r17:r16
- *		r17:r16 += r17:r16
- *		r19 >>= 1;
- *	} while(r19)
- *	return r1:r0
- * }
- */
-#define MUL(ra,rb,pfx) \
-  "\n" \
-  ".L" pfx "mul_" ra "_" rb "_%=:\n\t" \
-    "clr	r0\n\t" \
-    "clr	r1\n\t" \
-    "mov	r19, " ra "\n\t" \
-    "mov	r16, " rb "\n\t" \
-    "clr	r17\n" \
-  ".L" pfx "mul_loop_" ra "_" rb "_%=:\n\t" \
-    "sbrc	r19, 0\n\t" \
-    "add	r0, r16\n\t" \
-    "sbrc	r19, 0\n\t" \
-    "adc	r1, r17\n\t" \
-    "add	r16, r16\n\t" \
-    "adc	r17, r17\n\t" \
-    "lsr	r19\n\t" \
-    "brne	.L" pfx "mul_loop_" ra "_" rb "_%=\n\t"
-#endif /* defined(__AVR_HAVE_MUL__) */
-
-#if defined(__AVR_HAVE_MOVW__)
-#define MOVW(rdh,rdl,rsh,rsl) \
-    "movw	" rdl ", " rsl "\n\t"
-#else /* defined(__AVR_HAVE_MOVW__) */
-/*
- * The avr2 (and avr1) architecture is missing the movw instruction
- * (ATtiny22/26/1* and AT90s*). All others should have it.
- */
-#define MOVW(rdh,rdl,rsh,rsl) \
-    "mov	" rdl ", " rsl "\n\t" \
-    "mov	" rdh ", " rsh "\n\t"
-#endif /* defined(__AVR_HAVE_MOVW__) */
-#endif /* defined(HSV_USE_ASSEMBLY) */
-
 #endif
