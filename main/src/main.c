@@ -236,8 +236,6 @@ void app_main(void) {
 	gpio_set_direction(GPIO_POWER_ON, GPIO_MODE_INPUT);
 	gpio_set_pull_mode(GPIO_POWER_ON, GPIO_PULLDOWN_ONLY);
 
-//	vTaskDelay(pdMS_TO_TICKS(2000));
-
 	i2c_bus_t i2c_bus;
 	i2c_bus_init(&i2c_bus, I2C_NUM_0, 0, 2, 100000);
 //	i2c_detect(&i2c_bus);
@@ -288,7 +286,6 @@ void app_main(void) {
 
 	bool level = true;
 	uint8_t bright = 0;
-	unsigned int offset = 0;
 	bool shutdown = false;
 	unsigned loop_interval_ms = 20;
 	bool transaction_pending = false;
@@ -342,8 +339,8 @@ void app_main(void) {
 				node_info_t node_info;
 				memcpy(&node_info, packet.data, sizeof(node_info));
 
-				ESP_LOGI(TAG, "<"MACSTR"> Uptime: %lldus, Battery voltage: %umV, Battery current: %dmA",
-					 MAC2STR(packet.src_addr), node_info.uptime_us, (unsigned int)node_info.battery_voltage_mv, (int)node_info.battery_current_ma);
+				ESP_LOGI(TAG, "<"MACSTR"> Uptime: %lums, Battery voltage: %umV, Battery current: %dmA",
+					 MAC2STR(packet.src_addr), (uint32_t)node_info.uptime_us / 1000, (unsigned int)node_info.battery_voltage_mv, (int)node_info.battery_current_ma);
 			} else if (packet.len == sizeof(neighbour_advertisement_t)) {
 				neighbour_advertisement_t adv;
 				memcpy(&adv, packet.data, sizeof(neighbour_advertisement_t));
@@ -360,11 +357,8 @@ void app_main(void) {
 		hsv.v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
 		squish_apply(&squish, &hsv);
 //		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
-//		fast_hsv2rgb_32bit(hue_g, HSV_SAT_MAX, HSV_VAL_MAX / 10, &r, &g, &b);
 		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
 		leds_set_color(led_data + BYTES_RESET, r >> 4, g >> 4, b >> 4);
-//		leds_set_color(led_data + BYTES_RESET, 0x01, 0x10, 0x08);
-//		leds_set_color(led_data + BYTES_RESET, (uint32_t)gamma_table[b] << 16 | (uint32_t)gamma_table[g] << 8 | gamma_table[r]);
 
 		bright += 10;
 		xfer.length = dma_buf_len * 8;
@@ -427,8 +421,6 @@ void app_main(void) {
 
 		neighbour_housekeeping();
 
-		offset++;
-		offset %= HSV_HUE_STEPS;
 //		hue_g += 32;
 //		hue_g %= HSV_HUE_STEPS;
 		int64_t time_loop_end_us = esp_timer_get_time();
