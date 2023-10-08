@@ -9,6 +9,7 @@ set(srcs
 	src/neighbour.c
 	src/neighbour_rssi_delay_model.c
 	src/strutil.c
+	src/spl06.c
 	src/wireless.c)
 
 idf_component_register(SRCS ${srcs}

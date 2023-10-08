@@ -11,7 +11,7 @@
 #define WIRELESS_RX_QUEUE_SIZE		 8
 
 
-const char *TAG = "wireless";
+static const char *TAG = "wireless";
 
 const uint8_t wireless_broadcast_address[ESP_NOW_ETH_ALEN] = {
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff

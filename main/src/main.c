@@ -26,6 +26,7 @@
 #include "lis3dh.h"
 #include "neighbour.h"
 #include "neighbour_rssi_delay_model.h"
+#include "spl06.h"
 #include "strutil.h"
 #include "util.h"
 #include "wireless.h"
@@ -44,6 +45,24 @@ static const char *TAG = "main";
 
 #define BYTES_DATA	((NUM_LEDS) * 24 * (BITS_PER_SYMBOL)) / 8
 #define BYTES_RESET	(250 / 8)
+
+const uint8_t gamma_table[] = {
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,
+    1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,
+    2,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  5,  5,  5,
+    5,  6,  6,  6,  6,  7,  7,  7,  7,  8,  8,  8,  9,  9,  9, 10,
+   10, 10, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 16, 16,
+   17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 24, 24, 25,
+   25, 26, 27, 27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 35, 36,
+   37, 38, 39, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 50,
+   51, 52, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 68,
+   69, 70, 72, 73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 89,
+   90, 92, 93, 95, 96, 98, 99,101,102,104,105,107,109,110,112,114,
+  115,117,119,120,122,124,126,127,129,131,133,135,137,138,140,142,
+  144,146,148,150,152,154,156,158,160,162,164,167,169,171,173,175,
+  177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
+  215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
 
 static uint8_t *led_set_color_component(uint8_t *data, uint8_t val) {
 	for (int i = 0; i < 8; i++) {
@@ -98,6 +117,72 @@ static void IRAM_ATTR led_iomux_disable(spi_transaction_t *trans) {
 	gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
 }
 
+static void color_bend_to_hs(unsigned int bend, uint16_t *h, uint8_t *s) {
+	unsigned int initial_sat = 0;
+//	unsigned int initial_hue = 348; // of 360
+	int initial_hue = 40; // of 1536
+//	unsigned int mid_saturation = 31; // of 100
+	unsigned int mid_saturation = 220; // of 255
+//	unsigned int final_hue = 197; // of 360
+	int final_hue = 845; // of 360
+	unsigned int final_saturation = 200; // of 255
+
+	if (bend <= 500) {
+		*h = initial_hue;
+		*s = mid_saturation * bend  / 500;
+	} else {
+		int local_bend = bend - 500;
+		int hue = ((int)(initial_hue - (initial_hue + HSV_HUE_STEPS - final_hue) * local_bend / 500));
+		if (hue < 0) {
+			hue = HSV_HUE_STEPS + hue;
+		}
+		*h = hue;
+//		*s = 220;
+		*s = mid_saturation - (mid_saturation - final_saturation) * local_bend / 500;
+	}
+}
+
+static uint16_t hue_g = 0;
+static uint8_t sat_g = 0, val_g = 25;
+
+void hsv_input_loop(void *arg) {
+	char keybuf[32] = { 0 };
+	unsigned int bufpos = 0;
+	while (1) {
+		char c;
+		ssize_t ret = fread(&c, 1, 1, stdin);
+		if (ret > 0) {
+			if (c == '\x0a') {
+				keybuf[bufpos] = 0;
+				ESP_LOGI(TAG, "%s", keybuf);
+				char *first_sep = strchr(keybuf, ' ');
+				if (first_sep) {
+					*first_sep = 0;
+					char *second_sep = strchr(first_sep + 1, ' ');
+					if (second_sep) {
+						*second_sep = 0;
+						int hue = atoi(keybuf);
+						int sat = atoi(first_sep + 1);
+						int val = atoi(second_sep + 1);
+
+						ESP_LOGI(TAG, "hue: %d sat: %d val: %d", hue, sat, val);
+						hue_g = hue;
+						sat_g = sat;
+						val_g = val;
+					}
+				}
+				bufpos = 0;
+			}
+			if (c == '\x20' || (c >= '0' && c <= '9')) {
+				if (bufpos < sizeof(keybuf) - 1) {
+					keybuf[bufpos++] = c;
+				}
+			}
+		}
+		vTaskDelay(1);
+	}
+}
+
 void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
@@ -108,8 +193,8 @@ void app_main(void) {
 
 	spi_bus_config_t spi_bus_cfg = {
 		.mosi_io_num = 7,
-		.miso_io_num = -1,
-		.sclk_io_num = -1,
+		.miso_io_num = 6,
+		.sclk_io_num = 8,
 		.quadwp_io_num = -1,
 		.quadhd_io_num = -1,
 		.max_transfer_sz = 4092,
@@ -200,7 +285,12 @@ void app_main(void) {
 
 	neighbour_init();
 
+	spl06_t barometer;
+	ESP_ERROR_CHECK(spl06_init(&barometer, SPI2_HOST, 9));
+
 	ESP_ERROR_CHECK(lis3dh_init(&accelerometer, &i2c_bus, 0x18));
+
+//	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
 
 	bool level = true;
 	uint8_t bright = 0;
@@ -211,6 +301,10 @@ void app_main(void) {
 	uint64_t loops = 0;
 	int64_t click_time_us = 0;
 	uint32_t active_velocity = 0;
+	unsigned int color_bend = 0; // max 1000
+	int32_t last_pressure = -1;
+	int32_t pressure_at_rest = -1;
+	unsigned int pressure_samples = 0;
 	while (1) {
 		int64_t time_loop_start_us = esp_timer_get_time();
 		gpio_set_level(GPIO_LED1, level);
@@ -242,12 +336,42 @@ void app_main(void) {
 		int64_t clock_delay = neighbour_calculate_rssi_delay(&delay_model, clock_source);
 		int64_t delayed_clock = global_clock_us - clock_delay;
 		unsigned int hue = ((((uint64_t)delayed_clock / 1000UL) * HSV_HUE_STEPS) / 5000) % HSV_HUE_STEPS;
+//		ESP_LOGI(TAG, "Hue: %u", hue * 360 / HSV_HUE_STEPS);
 		fast_hsv2rgb_32bit(hue, HSV_SAT_MAX, HSV_VAL_MAX / 10, &r, &g, &b);
 		spi_transaction_t *xfer_;
 		if (transaction_pending) {
 			spi_device_get_trans_result(dev, &xfer_, portMAX_DELAY);
 			transaction_pending = false;
 		}
+
+		spl06_update(&barometer);
+		int32_t pressure = spl06_get_pressure(&barometer);
+//		ESP_LOGI(TAG, "Pressure: %ld", pressure);
+		if (pressure_samples < 20) {
+			if (pressure_samples == 3) {
+				pressure_at_rest = pressure;
+			} else if (pressure_samples > 3) {
+				pressure_at_rest = (pressure_at_rest * 8 + pressure * 2) / 10;
+			}
+			pressure_samples++;
+		} else {
+			int32_t delta = pressure_at_rest - pressure;
+
+			if (delta > 0) {
+				color_bend = MIN(color_bend + delta / 8192, 1000);
+			}
+		}
+/*
+		if (last_pressure != -1) {
+			int32_t delta = pressure - last_pressure;
+
+			if (delta > 0) {
+				color_bend = MIN(color_bend + delta / 256, 1000);
+			}
+		}
+*/
+		last_pressure = pressure;
+
 //		leds_set_color(led_data + BYTES_RESET, (uint32_t)b << 16 | (uint32_t)g << 8 | r);
 /*
 		if (delayed_clock % 1000000UL <= 100000UL) {
@@ -312,6 +436,18 @@ void app_main(void) {
 			active_velocity = 0;
 		}
 
+		if (color_bend > 0) {
+			color_bend -= MIN(color_bend, 4);
+		}
+
+		uint16_t h;
+		uint8_t s;
+		color_bend_to_hs(color_bend, &h, &s);
+//		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
+		fast_hsv2rgb_32bit(h, s, HSV_VAL_MAX / 10, &r, &g, &b);
+		leds_set_color(led_data + BYTES_RESET, (uint32_t)b << 16 | (uint32_t)g << 8 | r);
+//		leds_set_color(led_data + BYTES_RESET, (uint32_t)gamma_table[b] << 16 | (uint32_t)gamma_table[g] << 8 | gamma_table[r]);
+
 		bright += 10;
 		xfer.length = dma_buf_len * 8;
 		xfer.rxlength = 0;
@@ -375,6 +511,8 @@ void app_main(void) {
 
 		offset++;
 		offset %= HSV_HUE_STEPS;
+//		color_bend += 5;
+//		color_bend %= 1000;
 		int64_t time_loop_end_us = esp_timer_get_time();
 		int dt_ms = DIV_ROUND(time_loop_end_us - time_loop_start_us, 1000);
 		if (dt_ms > loop_interval_ms) {
