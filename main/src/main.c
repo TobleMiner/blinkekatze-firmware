@@ -22,6 +22,7 @@
 #include "bonk.h"
 #include "bq24295.h"
 #include "bq27546.h"
+#include "embedded_files.h"
 #include "fast_hsv2rgb.h"
 #include "i2c_bus.h"
 #include "lis3dh.h"
@@ -90,8 +91,66 @@ static uint8_t *led_set_color(uint8_t *data, uint8_t r, uint8_t g, uint8_t b) {
 	return data;
 }
 
+typedef struct rgb16 {
+	uint16_t r;
+	uint16_t g;
+	uint16_t b;
+} __attribute__((packed)) rgb16_t;
+
+static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_12bit_bin);
+
+#define COLOR_TABLE_SIZE 16UL
+
+static void lookup_color(const rgb16_t *in, rgb16_t *out) {
+	uint32_t idx = ((in->g * COLOR_TABLE_SIZE) + in->b) * COLOR_TABLE_SIZE + in->r;
+	*out = colorcal_table[idx];
+}
+
+static void apply_color_correction(const rgb16_t *in, rgb16_t *out) {
+	rgb16_t color_min_lookup = { in->r >> 12, in->g >> 12, in->b >> 12 };
+	rgb16_t color_max_lookup = {
+		MIN(DIV_ROUND_UP(in->r, 4096), 15),
+		MIN(DIV_ROUND_UP(in->g, 4096), 15),
+		MIN(DIV_ROUND_UP(in->b, 4096), 15)
+	};
+	rgb16_t color_min = {
+		color_min_lookup.r * 4096,
+		color_min_lookup.g * 4096,
+		color_min_lookup.b * 4096
+	};
+	rgb16_t color_max = {
+		color_max_lookup.r * 4096,
+		color_max_lookup.g * 4096,
+		color_max_lookup.b * 4096
+	};
+	rgb16_t color_corrected_min;
+	rgb16_t color_corrected_max;
+	lookup_color(&color_min_lookup, &color_corrected_min);
+	lookup_color(&color_max_lookup, &color_corrected_max);
+
+	int32_t delta_in_r = in->r - color_min.r;
+	int32_t delta_in_g = in->g - color_min.g;
+	int32_t delta_in_b = in->b - color_min.b;
+	int32_t delta_min_max_r = color_max.r - color_min.r;
+	int32_t delta_min_max_g = color_max.g - color_min.g;
+	int32_t delta_min_max_b = color_max.b - color_min.b;
+	rgb16_t color_out = color_corrected_min;
+
+	if (delta_min_max_r) {
+		color_out.r += DIV_ROUND(((int32_t)color_corrected_max.r - (int32_t)color_corrected_min.r) * delta_in_r, delta_min_max_r);
+	}
+	if (delta_min_max_g) {
+		color_out.g += DIV_ROUND(((int32_t)color_corrected_max.g - (int32_t)color_corrected_min.g) * delta_in_g, delta_min_max_g);
+	}
+	if (delta_min_max_b) {
+		color_out.b += DIV_ROUND(((int32_t)color_corrected_max.b - (int32_t)color_corrected_min.b) * delta_in_b, delta_min_max_b);
+	}
+
+	*out = color_out;
+}
+
 #define GLOBAL_BRIGHT(comp) ((comp) > NUM_LEDS ? (comp) >> 4 : 0)
-#define LOCAL_BRIGHT(comp, i_) (GLOBAL_BRIGHT(comp) + (i < (comp - (GLOBAL_BRIGHT(comp) << 4)) ? 1 : 0))
+#define LOCAL_BRIGHT(comp, i_) (GLOBAL_BRIGHT(comp) + (((i_ < (comp - (GLOBAL_BRIGHT(comp) << 4)))) ? 1 : 0))
 
 static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
 /*
@@ -105,10 +164,14 @@ static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
 		b -= local_b;
 	}
 */
+	rgb16_t color_in = { r, g, b };
+	rgb16_t color_out;
+	apply_color_correction(&color_in, &color_out);
+	int led_map[NUM_LEDS] = { 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15 };
 	for (int i = 0; i < NUM_LEDS; i++) {
-		uint8_t local_r = LOCAL_BRIGHT(r, i);
-		uint8_t local_g = LOCAL_BRIGHT(g, i);
-		uint8_t local_b = LOCAL_BRIGHT(b, i);
+		uint8_t local_r = MIN(LOCAL_BRIGHT(color_out.r, led_map[i]), 255);
+		uint8_t local_g = MIN(LOCAL_BRIGHT(color_out.g, led_map[i]), 255);
+		uint8_t local_b = MIN(LOCAL_BRIGHT(color_out.b, led_map[i]), 255);
 		data = led_set_color(data, local_r, local_g, local_b);
 	}
 }
@@ -128,8 +191,9 @@ static void IRAM_ATTR led_iomux_disable(spi_transaction_t *trans) {
 	gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
 }
 
-static uint16_t hue_g = 0;
-static uint8_t sat_g = 0, val_g = 25;
+static int red_g = 0;
+static int green_g = 0;
+static int blue_g = 0;
 
 void hsv_input_loop(void *arg) {
 	char keybuf[32] = { 0 };
@@ -147,14 +211,9 @@ void hsv_input_loop(void *arg) {
 					char *second_sep = strchr(first_sep + 1, ' ');
 					if (second_sep) {
 						*second_sep = 0;
-						int hue = atoi(keybuf);
-						int sat = atoi(first_sep + 1);
-						int val = atoi(second_sep + 1);
-
-						ESP_LOGI(TAG, "hue: %d sat: %d val: %d", hue, sat, val);
-						hue_g = hue;
-						sat_g = sat;
-						val_g = val;
+						red_g = atoi(keybuf);
+						green_g = atoi(first_sep + 1);
+						blue_g = atoi(second_sep + 1);
 					}
 				}
 				bufpos = 0;
@@ -280,7 +339,7 @@ void app_main(void) {
 	squish_t squish;
 	squish_init(&squish, &barometer);
 
-//	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
+	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
 
 	bool level = true;
 	uint8_t bright = 0;
@@ -354,14 +413,15 @@ void app_main(void) {
 		bonk_update(&bonk);
 		unsigned int bonk_intensity = bonk_get_intensity(&bonk);
 
-		color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 10 };
+		color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 };
 		rainbow_fade_apply(&hsv);
 		bonk_apply(&bonk, &hsv);
 //		hsv.v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
 		squish_apply(&squish, &hsv);
 //		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
 		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
-		leds_set_color(led_data + BYTES_RESET, r >> 4, g >> 4, b >> 4);
+//		leds_set_color(led_data + BYTES_RESET, r, g, b);
+		leds_set_color(led_data + BYTES_RESET, (uint16_t)red_g, (uint16_t)green_g, (uint16_t)blue_g);
 
 		bright += 10;
 		xfer.length = dma_buf_len * 8;
@@ -405,8 +465,6 @@ void app_main(void) {
 
 		neighbour_housekeeping();
 
-//		hue_g += 32;
-//		hue_g %= HSV_HUE_STEPS;
 		int64_t time_loop_end_us = esp_timer_get_time();
 		int dt_ms = DIV_ROUND(time_loop_end_us - time_loop_start_us, 1000);
 		if (dt_ms > loop_interval_ms) {
