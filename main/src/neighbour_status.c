@@ -31,15 +31,19 @@ void neighbour_status_rx(const wireless_packet_t *packet, const neighbour_t *nei
 	memcpy(&status, packet->data, sizeof(neighbour_status_packet_t));
 	if (neigh) {
 		uint32_t uptime_ms = neighbour_get_uptime(neigh) / 1000;
-		ESP_LOGI(TAG, "<"MACSTR"> Uptime <%lums>, Battery <%d%%, %dmV, %dmA, %d°C>",
+		ESP_LOGI(TAG, "<"MACSTR"> Uptime <%lums>, Battery <%d%%, %dmV, %dmA, %d°C, %dmin, %dmAh, %d%%>",
 			 MAC2STR(packet->src_addr), uptime_ms, (int)status.battery_soc_percent,
 			 (int)status.battery_voltage_mv, (int)status.battery_current_ma,
-			 DIV_ROUND((int)status.battery_temperature_0_1k - 2732, 10));
+			 DIV_ROUND((int)status.battery_temperature_0_1k - 2732, 10),
+			 (int)status.battery_time_to_empty_min, (int)status.battery_full_charge_capacity_mah,
+			 (int)status.battery_soh_percent);
 	} else {
-		ESP_LOGI(TAG, "<"MACSTR"> Uptime <??""?>, Battery <%d%%, %dmV, %dmA, %d°C>",
+		ESP_LOGI(TAG, "<"MACSTR"> Uptime <??""?>, Battery <%d%%, %dmV, %dmA, %d°C, %dmin, %dmAh, %d%%>",
 			 MAC2STR(packet->src_addr), (int)status.battery_soc_percent,
 			 (int)status.battery_voltage_mv, (int)status.battery_current_ma,
-			 DIV_ROUND((int)status.battery_temperature_0_1k - 2732, 10));
+			 DIV_ROUND((int)status.battery_temperature_0_1k - 2732, 10),
+			 (int)status.battery_time_to_empty_min, (int)status.battery_full_charge_capacity_mah,
+			 (int)status.battery_soh_percent);
 	}
 }
 
@@ -54,6 +58,9 @@ esp_err_t neighbour_status_update(void) {
 		err = bq27546_get_current_ma(neighbour_status.gauge, &current_ma);
 		status.battery_current_ma = current_ma;
 		status.battery_temperature_0_1k = bq27546_get_temperature_0_1k(neighbour_status.gauge);
+		status.battery_time_to_empty_min = MAX(bq27546_get_time_to_empty_min(neighbour_status.gauge), -1);
+		status.battery_full_charge_capacity_mah = MAX(bq27546_get_full_charge_capacity_mah(neighbour_status.gauge), -1);
+		status.battery_soh_percent = MAX(bq27546_get_state_of_health_percent(neighbour_status.gauge), -1);
 		wireless_broadcast((const uint8_t *)&status, sizeof(status));
 		neighbour_status.timestamp_last_status_tx_us = now;
 	}
