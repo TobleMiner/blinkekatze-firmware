@@ -170,3 +170,7 @@ int64_t neighbour_remote_to_local_time(const neighbour_t *neigh, int64_t remote_
 int64_t neighbour_get_uptime(const neighbour_t *neigh) {
 	return get_uptime_us(neigh, esp_timer_get_time());
 }
+
+bool neighbour_has_neighbours(void) {
+	return !LIST_IS_EMPTY(&neighbours.neighbours);
+}

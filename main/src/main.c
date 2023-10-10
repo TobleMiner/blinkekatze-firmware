@@ -32,14 +32,13 @@
 #include "rainbow_fade.h"
 #include "spl06.h"
 #include "squish.h"
+#include "status_leds.h"
 #include "strutil.h"
 #include "util.h"
 #include "wireless.h"
 
 static const char *TAG = "main";
 
-#define GPIO_LED1	20
-#define GPIO_LED2	21
 #define GPIO_POWER_ON	10
 #define GPIO_CHARGE_EN	 1
 
@@ -290,11 +289,7 @@ void app_main(void) {
 	};
 	ESP_ERROR_CHECK(spi_device_transmit(dev, &xfer));
 
-	gpio_reset_pin(GPIO_LED1);
-	gpio_reset_pin(GPIO_LED2);
 	gpio_reset_pin(GPIO_POWER_ON);
-	gpio_set_direction(GPIO_LED1, GPIO_MODE_OUTPUT);
-	gpio_set_direction(GPIO_LED2, GPIO_MODE_OUTPUT);
 	gpio_set_direction(GPIO_POWER_ON, GPIO_MODE_INPUT);
 	gpio_set_pull_mode(GPIO_POWER_ON, GPIO_PULLDOWN_ONLY);
 
@@ -348,7 +343,8 @@ void app_main(void) {
 
 	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
 
-	bool level = true;
+	status_leds_init();
+
 	uint8_t bright = 0;
 	bool shutdown = false;
 	unsigned loop_interval_ms = 20;
@@ -356,9 +352,6 @@ void app_main(void) {
 	uint64_t loops = 0;
 	while (1) {
 		int64_t time_loop_start_us = esp_timer_get_time();
-		gpio_set_level(GPIO_LED1, level);
-		gpio_set_level(GPIO_LED2, !level);
-		level = !level;
 
 		if (!gpio_get_level(GPIO_POWER_ON)) {
 			if (shutdown) {
@@ -471,6 +464,8 @@ void app_main(void) {
 		}
 
 		neighbour_housekeeping();
+
+		status_leds_update();
 
 		int64_t time_loop_end_us = esp_timer_get_time();
 		int dt_ms = DIV_ROUND(time_loop_end_us - time_loop_start_us, 1000);

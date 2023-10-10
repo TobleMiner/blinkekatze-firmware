@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <esp_err.h>
@@ -33,3 +34,4 @@ int64_t neighbour_get_global_clock_and_source(neighbour_t **src);
 esp_err_t neighbour_update_rssi(const uint8_t *address, int rssi);
 int64_t neighbour_remote_to_local_time(const neighbour_t *neigh, int64_t remote_timestamp);
 int64_t neighbour_get_uptime(const neighbour_t *neigh);
+bool neighbour_has_neighbours(void);
