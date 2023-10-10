@@ -97,9 +97,11 @@ typedef struct rgb16 {
 	uint16_t b;
 } __attribute__((packed)) rgb16_t;
 
-static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_12bit_bin);
+//static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_12bit_bin);
+static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_32x32x32_12bit_bin);
 
-#define COLOR_TABLE_SIZE 16UL
+#define COLOR_TABLE_SIZE	32UL
+#define LOOKUP_DIV		((1 << 16) / COLOR_TABLE_SIZE)
 
 static void lookup_color(const rgb16_t *in, rgb16_t *out) {
 	uint32_t idx = ((in->g * COLOR_TABLE_SIZE) + in->b) * COLOR_TABLE_SIZE + in->r;
@@ -107,21 +109,21 @@ static void lookup_color(const rgb16_t *in, rgb16_t *out) {
 }
 
 static void apply_color_correction(const rgb16_t *in, rgb16_t *out) {
-	rgb16_t color_min_lookup = { in->r >> 12, in->g >> 12, in->b >> 12 };
+	rgb16_t color_min_lookup = { in->r / LOOKUP_DIV, in->g / LOOKUP_DIV, in->b / LOOKUP_DIV };
 	rgb16_t color_max_lookup = {
-		MIN(DIV_ROUND_UP(in->r, 4096), 15),
-		MIN(DIV_ROUND_UP(in->g, 4096), 15),
-		MIN(DIV_ROUND_UP(in->b, 4096), 15)
+		MIN(DIV_ROUND_UP(in->r, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
+		MIN(DIV_ROUND_UP(in->g, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
+		MIN(DIV_ROUND_UP(in->b, LOOKUP_DIV), COLOR_TABLE_SIZE - 1)
 	};
 	rgb16_t color_min = {
-		color_min_lookup.r * 4096,
-		color_min_lookup.g * 4096,
-		color_min_lookup.b * 4096
+		color_min_lookup.r * LOOKUP_DIV,
+		color_min_lookup.g * LOOKUP_DIV,
+		color_min_lookup.b * LOOKUP_DIV
 	};
 	rgb16_t color_max = {
-		color_max_lookup.r * 4096,
-		color_max_lookup.g * 4096,
-		color_max_lookup.b * 4096
+		color_max_lookup.r * LOOKUP_DIV,
+		color_max_lookup.g * LOOKUP_DIV,
+		color_max_lookup.b * LOOKUP_DIV
 	};
 	rgb16_t color_corrected_min;
 	rgb16_t color_corrected_max;
@@ -153,26 +155,31 @@ static void apply_color_correction(const rgb16_t *in, rgb16_t *out) {
 #define LOCAL_BRIGHT(comp, i_) (GLOBAL_BRIGHT(comp) + (((i_ < (comp - (GLOBAL_BRIGHT(comp) << 4)))) ? 1 : 0))
 
 static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
-/*
-	for (int i = 0; i < NUM_LEDS; i++) {
-		uint8_t local_r = MIN(r, 255);
-		uint8_t local_g = MIN(g, 255);
-		uint8_t local_b = MIN(b, 255);
-		data = led_set_color(data, local_r, local_g, local_b);
-		r -= local_r;
-		g -= local_g;
-		b -= local_b;
-	}
-*/
 	rgb16_t color_in = { r, g, b };
 	rgb16_t color_out;
 	apply_color_correction(&color_in, &color_out);
-	int led_map[NUM_LEDS] = { 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15 };
+//	int led_map[NUM_LEDS] = { 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15 };
+	int led_map[NUM_LEDS] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+/*
 	for (int i = 0; i < NUM_LEDS; i++) {
 		uint8_t local_r = MIN(LOCAL_BRIGHT(color_out.r, led_map[i]), 255);
 		uint8_t local_g = MIN(LOCAL_BRIGHT(color_out.g, led_map[i]), 255);
 		uint8_t local_b = MIN(LOCAL_BRIGHT(color_out.b, led_map[i]), 255);
 		data = led_set_color(data, local_r, local_g, local_b);
+	}
+*/
+
+	uint16_t r_corrected = color_out.r;
+	uint16_t g_corrected = color_out.g;
+	uint16_t b_corrected = color_out.b;
+	for (int i = 0; i < NUM_LEDS; i++) {
+		uint8_t local_r = MIN(r_corrected, 255);
+		uint8_t local_g = MIN(g_corrected, 255);
+		uint8_t local_b = MIN(b_corrected, 255);
+		data = led_set_color(data, local_r, local_g, local_b);
+		r_corrected -= local_r;
+		g_corrected -= local_g;
+		b_corrected -= local_b;
 	}
 }
 
