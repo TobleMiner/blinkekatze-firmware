@@ -344,6 +344,7 @@ void app_main(void) {
 	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
 
 	status_leds_init();
+	status_led_set_strobe(STATUS_LED_RED, 20);
 
 	uint8_t bright = 0;
 	bool shutdown = false;
@@ -394,6 +395,7 @@ void app_main(void) {
 			if (packet.len >= 1) {
 				const neighbour_t *neigh = neighbour_find_by_address(packet.src_addr);
 				uint8_t packet_type = packet.data[0];
+				status_led_strobe(STATUS_LED_RED);
 				switch (packet_type) {
 				case WIRELESS_PACKET_TYPE_BONK:
 					bonk_rx(&bonk, &packet, neigh);

@@ -6,6 +6,7 @@
 #include <esp_mac.h>
 #include <esp_timer.h>
 
+#include "status_leds.h"
 #include "util.h"
 #include "wireless.h"
 
@@ -136,6 +137,12 @@ void neighbour_housekeeping() {
 
 		wireless_broadcast((uint8_t *)&adv, sizeof(adv));
 		neighbours.last_adv_timestamp = now;
+	}
+
+	if (neighbour_has_neighbours()) {
+		status_led_set_mode(STATUS_LED_GREEN, STATUS_LED_MODE_ON);
+	} else {
+		status_led_set_blink(STATUS_LED_GREEN, 1000);
 	}
 }
 
