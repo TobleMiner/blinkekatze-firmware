@@ -10,12 +10,13 @@
 
 #define WIRELESS_RX_QUEUE_SIZE		 8
 
-
 static const char *TAG = "wireless";
 
-const uint8_t wireless_broadcast_address[ESP_NOW_ETH_ALEN] = {
+static const uint8_t wireless_broadcast_address[ESP_NOW_ETH_ALEN] = {
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 };
+
+static char ap_password[WIRELESS_AP_PASSWORD_LENGTH + 1] = { 0 };
 
 static QueueHandle_t rx_queue;
 static bool scan_done = false;
@@ -120,7 +121,8 @@ esp_err_t wireless_init() {
 		}
 	};
 	snprintf((char *)ap_cfg.ap.ssid, 32, "blinkekatze_"MACSTR, MAC2STR(ap_mac_address));
-	generate_psk((char *)ap_cfg.ap.password, 32);
+	generate_psk(ap_password, WIRELESS_AP_PASSWORD_LENGTH);
+	memcpy(ap_cfg.ap.password, ap_password, WIRELESS_AP_PASSWORD_LENGTH);
 	err = esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
 	if (err) {
 		return err;
@@ -212,3 +214,7 @@ void wireless_clear_scan_results(void) {
 	esp_wifi_clear_ap_list();
 	scan_done = false;
 }
+
+const char *wireless_get_ap_password() {
+	return ap_password;
+};

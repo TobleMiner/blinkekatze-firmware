@@ -26,10 +26,12 @@ void neighbour_status_init(bq27546_t *battery_gauge) {
 void neighbour_status_rx(const wireless_packet_t *packet, const neighbour_t *neigh) {
 	if (packet->len < sizeof(neighbour_status_packet_t)) {
 		ESP_LOGI(TAG, "Short packet received, expected %u bytes but got %u bytes", sizeof(neighbour_status_packet_t), packet->len);
+		return;
 	}
 	neighbour_status_packet_t status;
 	memcpy(&status, packet->data, sizeof(neighbour_status_packet_t));
 	if (neigh) {
+		neighbour_update_status(neigh, &status);
 		uint32_t uptime_ms = neighbour_get_uptime(neigh) / 1000;
 		ESP_LOGI(TAG, "<"MACSTR"> Uptime <%lums>, Battery <%d%%, %dmV, %dmA, %d°C, %dmin, %dmAh, %d%%>",
 			 MAC2STR(packet->src_addr), uptime_ms, (int)status.battery_soc_percent,

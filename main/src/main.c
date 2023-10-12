@@ -28,8 +28,10 @@
 #include "lis3dh.h"
 #include "neighbour.h"
 #include "neighbour_rssi_delay_model.h"
+#include "neighbour_static_info.h"
 #include "neighbour_status.h"
 #include "rainbow_fade.h"
+#include "shell.h"
 #include "spl06.h"
 #include "squish.h"
 #include "status_leds.h"
@@ -234,6 +236,9 @@ void hsv_input_loop(void *arg) {
 	}
 }
 
+static SemaphoreHandle_t main_lock;
+static StaticSemaphore_t main_lock_buffer;
+
 void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
@@ -241,6 +246,8 @@ void app_main(void) {
 	gpio_reset_pin(GPIO_CHARGE_EN);
 	gpio_set_direction(GPIO_CHARGE_EN, GPIO_MODE_OUTPUT);
 	gpio_set_level(GPIO_CHARGE_EN, 0);
+
+	main_lock = xSemaphoreCreateMutexStatic(&main_lock_buffer);
 
 	spi_bus_config_t spi_bus_cfg = {
 		.mosi_io_num = 7,
@@ -341,10 +348,12 @@ void app_main(void) {
 	squish_t squish;
 	squish_init(&squish, &barometer);
 
-	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
+//	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
 
 	status_leds_init();
 	status_led_set_strobe(STATUS_LED_RED, 20);
+
+	shell_init();
 
 	uint8_t bright = 0;
 	bool shutdown = false;
@@ -381,13 +390,11 @@ void app_main(void) {
 		unsigned int hue = ((((uint64_t)delayed_clock / 1000UL) * HSV_HUE_STEPS) / 5000) % HSV_HUE_STEPS;
 //		ESP_LOGI(TAG, "Hue: %u", hue * 360 / HSV_HUE_STEPS);
 //		fast_hsv2rgb_32bit(hue, HSV_SAT_MAX, HSV_VAL_MAX / 10, &r, &g, &b);
-		spi_transaction_t *xfer_;
-		if (transaction_pending) {
-			spi_device_get_trans_result(dev, &xfer_, portMAX_DELAY);
-			transaction_pending = false;
-		}
 
-		squish_update(&squish);
+		bonk_update(&bonk);
+
+		xSemaphoreTake(main_lock, portMAX_DELAY);
+		neighbour_housekeeping();
 
 		wireless_packet_t packet;
 		if (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
@@ -406,42 +413,13 @@ void app_main(void) {
 				case WIRELESS_PACKET_TYPE_NEIGHBOUR_STATUS:
 					neighbour_status_rx(&packet, neigh);
 					break;
+				case WIRELESS_PACKET_TYPE_NEIGHBOUR_STATIC_INFO:
+					neighbour_static_info_rx(&packet, neigh);
+					break;
 				default:
 					ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
 				}
 			}
-		}
-
-		bonk_update(&bonk);
-		unsigned int bonk_intensity = bonk_get_intensity(&bonk);
-
-		color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 };
-		rainbow_fade_apply(&hsv);
-		bonk_apply(&bonk, &hsv);
-//		hsv.v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
-		squish_apply(&squish, &hsv);
-//		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
-		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
-//		leds_set_color(led_data + BYTES_RESET, r, g, b);
-		leds_set_color(led_data + BYTES_RESET, (uint16_t)red_g, (uint16_t)green_g, (uint16_t)blue_g);
-
-		bright += 10;
-		xfer.length = dma_buf_len * 8;
-		xfer.rxlength = 0;
-		xfer.tx_buffer = led_data;
-		xfer.rx_buffer = NULL;
-		ESP_ERROR_CHECK(spi_device_queue_trans(dev, &xfer, 0));
-		transaction_pending = true;
-
-		neighbour_status_update();
-
-		if (loops % 500 == 0) {
-			// Charger watchdog reset
-			bq24295_watchdog_reset(&charger);
-		}
-
-		if (loops % 500 == 250) {
-			wireless_scan_aps();
 		}
 
 		if (wireless_is_scan_done()) {
@@ -464,8 +442,45 @@ void app_main(void) {
 			}
 			wireless_clear_scan_results();
 		}
+		xSemaphoreGive(main_lock);
 
-		neighbour_housekeeping();
+		spi_transaction_t *xfer_;
+		if (transaction_pending) {
+			spi_device_get_trans_result(dev, &xfer_, portMAX_DELAY);
+			transaction_pending = false;
+		}
+
+		squish_update(&squish);
+
+		color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 };
+		rainbow_fade_apply(&hsv);
+		bonk_apply(&bonk, &hsv);
+//		hsv.v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
+		squish_apply(&squish, &hsv);
+//		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
+		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
+		leds_set_color(led_data + BYTES_RESET, r, g, b);
+//		leds_set_color(led_data + BYTES_RESET, (uint16_t)red_g, (uint16_t)green_g, (uint16_t)blue_g);
+
+		bright += 10;
+		xfer.length = dma_buf_len * 8;
+		xfer.rxlength = 0;
+		xfer.tx_buffer = led_data;
+		xfer.rx_buffer = NULL;
+		ESP_ERROR_CHECK(spi_device_queue_trans(dev, &xfer, 0));
+		transaction_pending = true;
+
+		neighbour_static_info_update();
+		neighbour_status_update();
+
+		if (loops % 500 == 0) {
+			// Charger watchdog reset
+			bq24295_watchdog_reset(&charger);
+		}
+
+		if (loops % 500 == 250) {
+			wireless_scan_aps();
+		}
 
 		status_leds_update();
 
@@ -479,4 +494,12 @@ void app_main(void) {
 		}
 		loops++;
 	}
+}
+
+void main_loop_lock() {
+	xSemaphoreTake(main_lock, portMAX_DELAY);
+}
+
+void main_loop_unlock() {
+	xSemaphoreGive(main_lock);
 }

@@ -1,6 +1,7 @@
 #include "neighbour.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 
 #include <esp_log.h>
 #include <esp_mac.h>
@@ -81,7 +82,7 @@ esp_err_t neighbour_update(const uint8_t *address, int64_t timestamp_us, const n
 	neighbour_t *neigh = find_neighbour(address);
 	if (!neigh) {
 		ESP_LOGI(TAG, "New neighbour "MACSTR, MAC2STR(address));
-		neigh = malloc(sizeof(neighbour_t));
+		neigh = calloc(1, sizeof(neighbour_t));
 		if (!neigh) {
 			return ESP_ERR_NO_MEM;
 		}
@@ -180,4 +181,33 @@ int64_t neighbour_get_uptime(const neighbour_t *neigh) {
 
 bool neighbour_has_neighbours(void) {
 	return !LIST_IS_EMPTY(&neighbours.neighbours);
+}
+
+void neighbour_print_list(void) {
+	printf("Address             Uptime       Age      RSSI     Firmware version\r\n");
+	printf("=======================================================================\r\n");
+	//      aa:bb:cc:dd:ee:ff   xxxxxxxxms   xxxxms   -90dBm   <firmware version>
+	neighbour_t *neigh;
+	int64_t now = esp_timer_get_time();
+	LIST_FOR_EACH_ENTRY(neigh, &neighbours.neighbours, list) {
+		uint64_t age_ms = now - neigh->last_local_adv_rx_timestamp_us;
+		bool firmware_str_valid = !!neigh->last_static_info.packet_type;
+		const char *firmware_str = neigh->last_static_info.firmware_version;
+		printf(MACSTR"   %8lums   %4lums   %2ddBm   %.*s\r\n", MAC2STR(neigh->address),
+		       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
+		       (unsigned long)(age_ms / 1000ULL),
+		       neigh->rssi,
+		       firmware_str_valid ? strnlen(firmware_str, sizeof(neigh->last_static_info.firmware_version)) : 3,
+		       firmware_str_valid ? firmware_str : "???");
+	}
+}
+
+void neighbour_update_status(const neighbour_t *neigh, const neighbour_status_packet_t *status) {
+	neighbour_t *neigh_ = (neighbour_t *)neigh;
+	neigh_->last_status = *status;
+}
+
+void neighbour_update_static_info(const neighbour_t *neigh, const neighbour_static_info_packet_t *static_info) {
+	neighbour_t *neigh_ = (neighbour_t *)neigh;
+	neigh_->last_static_info = *static_info;
 }

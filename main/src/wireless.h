@@ -11,12 +11,14 @@
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
 
-#define WIRELESS_MAX_PACKET_SIZE	64
+#define WIRELESS_MAX_PACKET_SIZE	128
+#define WIRELESS_AP_PASSWORD_LENGTH	 16
 
 typedef enum wireless_packet_type {
 	WIRELESS_PACKET_TYPE_BONK = 0,
 	WIRELESS_PACKET_TYPE_NEIGHBOUR_ADVERTISEMENT = 1,
 	WIRELESS_PACKET_TYPE_NEIGHBOUR_STATUS = 2,
+	WIRELESS_PACKET_TYPE_NEIGHBOUR_STATIC_INFO = 3,
 } wireless_packet_type_t;
 
 typedef struct wireless_packet {
@@ -35,3 +37,4 @@ bool wireless_is_scan_done(void);
 unsigned int wireless_get_num_scan_results(void);
 esp_err_t wireless_get_scan_results(wifi_ap_record_t *ap_records, unsigned int *num_records);
 void wireless_clear_scan_results(void);
+const char *wireless_get_ap_password(void);

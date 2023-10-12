@@ -9,12 +9,14 @@ set(srcs
 	src/main.c
 	src/neighbour.c
 	src/neighbour_rssi_delay_model.c
+	src/neighbour_static_info.c
 	src/neighbour_status.c
 	src/rainbow_fade.c
-	src/status_leds.c
-	src/strutil.c
+	src/shell.c
 	src/spl06.c
 	src/squish.c
+	src/status_leds.c
+	src/strutil.c
 	src/wireless.c)
 
 idf_component_register(SRCS ${srcs}
