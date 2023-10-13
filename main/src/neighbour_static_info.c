@@ -1,7 +1,10 @@
 #include "neighbour_static_info.h"
 
+#include <stdio.h>
+
 #include <esp_app_desc.h>
 #include <esp_log.h>
+#include <esp_mac.h>
 #include <esp_timer.h>
 
 #define STATIC_INFO_TX_INTERVAL_MS	60000
@@ -38,4 +41,22 @@ void neighbour_static_info_update() {
 		wireless_broadcast((const uint8_t *)&info, sizeof(info));
 		neighbour_static_info.last_tx_timestamp = now;
 	}
+}
+
+void neighbour_static_info_get_ap_ssid(const neighbour_t *neigh, char *buf, size_t len) {
+	snprintf(buf, len, "blinkekatze_"MACSTR, MAC2STR(neigh->address));
+}
+
+bool neighbour_static_info_get_ap_password(const neighbour_t *neigh, char *buf, size_t len) {
+	if (!neigh->last_static_info.packet_type) {
+		return false;
+	}
+
+	size_t psk_len = strnlen(neigh->last_static_info.ap_password, sizeof(neigh->last_static_info.ap_password));
+	if (len - 1 < psk_len) {
+		psk_len = len - 1;
+	}
+	memcpy(buf, neigh->last_static_info.ap_password, psk_len);
+	buf[psk_len] = 0;
+	return true;
 }

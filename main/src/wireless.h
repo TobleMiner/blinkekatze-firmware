@@ -19,6 +19,7 @@ typedef enum wireless_packet_type {
 	WIRELESS_PACKET_TYPE_NEIGHBOUR_ADVERTISEMENT = 1,
 	WIRELESS_PACKET_TYPE_NEIGHBOUR_STATUS = 2,
 	WIRELESS_PACKET_TYPE_NEIGHBOUR_STATIC_INFO = 3,
+	WIRELESS_PACKET_TYPE_OTA = 4
 } wireless_packet_type_t;
 
 typedef struct wireless_packet {
@@ -38,3 +39,5 @@ unsigned int wireless_get_num_scan_results(void);
 esp_err_t wireless_get_scan_results(wifi_ap_record_t *ap_records, unsigned int *num_records);
 void wireless_clear_scan_results(void);
 const char *wireless_get_ap_password(void);
+esp_err_t wireless_connect_to_ap(wifi_config_t *sta_cfg);
+int wireless_get_ap_ifindex(void);

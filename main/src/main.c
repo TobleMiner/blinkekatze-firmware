@@ -30,6 +30,7 @@
 #include "neighbour_rssi_delay_model.h"
 #include "neighbour_static_info.h"
 #include "neighbour_status.h"
+#include "ota.h"
 #include "rainbow_fade.h"
 #include "shell.h"
 #include "spl06.h"
@@ -353,6 +354,8 @@ void app_main(void) {
 	status_leds_init();
 	status_led_set_strobe(STATUS_LED_RED, 20);
 
+	ESP_ERROR_CHECK(ota_init());
+
 	shell_init();
 
 	uint8_t bright = 0;
@@ -395,6 +398,7 @@ void app_main(void) {
 
 		xSemaphoreTake(main_lock, portMAX_DELAY);
 		neighbour_housekeeping();
+		ota_update();
 
 		wireless_packet_t packet;
 		if (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
@@ -415,6 +419,9 @@ void app_main(void) {
 					break;
 				case WIRELESS_PACKET_TYPE_NEIGHBOUR_STATIC_INFO:
 					neighbour_static_info_rx(&packet, neigh);
+					break;
+				case WIRELESS_PACKET_TYPE_OTA:
+					ota_rx(&packet, neigh);
 					break;
 				default:
 					ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);

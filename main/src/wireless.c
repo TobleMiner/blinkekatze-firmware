@@ -4,6 +4,7 @@
 
 #include <esp_log.h>
 #include <esp_mac.h>
+#include <esp_netif.h>
 #include <esp_random.h>
 #include <esp_timer.h>
 #include <nvs_flash.h>
@@ -20,6 +21,8 @@ static char ap_password[WIRELESS_AP_PASSWORD_LENGTH + 1] = { 0 };
 
 static QueueHandle_t rx_queue;
 static bool scan_done = false;
+static esp_netif_t *ap_netif = NULL;
+static esp_netif_t *sta_netif = NULL;
 
 static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int data_len) {
 	int64_t rx_timestamp = esp_timer_get_time();
@@ -75,6 +78,16 @@ esp_err_t wireless_init() {
 	err = esp_event_loop_create_default();
 	if (err) {
 		return err;
+	}
+
+	ap_netif = esp_netif_create_default_wifi_ap();
+	if (!ap_netif) {
+		return ESP_FAIL;
+	}
+
+	sta_netif = esp_netif_create_default_wifi_sta();
+	if (!sta_netif) {
+		return ESP_FAIL;
 	}
 
 	wifi_init_config_t wifi_cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -137,6 +150,9 @@ esp_err_t wireless_init() {
 	if (err) {
 		return err;
 	}
+
+	esp_netif_create_ip6_linklocal(ap_netif);
+	esp_netif_create_ip6_linklocal(sta_netif);
 
 	err = esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_SCAN_DONE,
 						  &sta_event_handler, NULL, NULL);
@@ -218,3 +234,22 @@ void wireless_clear_scan_results(void) {
 const char *wireless_get_ap_password() {
 	return ap_password;
 };
+
+esp_err_t wireless_connect_to_ap(wifi_config_t *sta_cfg) {
+	sta_cfg->sta.scan_method = WIFI_FAST_SCAN;
+	sta_cfg->sta.bssid_set = false;
+	sta_cfg->sta.channel = 14;
+
+	esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, sta_cfg);
+	if (err) {
+		ESP_LOGE(TAG, "Failed to configure station interface: %d", err);
+		return err;
+	}
+
+	esp_wifi_disconnect();
+	return esp_wifi_connect();
+}
+
+int wireless_get_ap_ifindex() {
+	return esp_netif_get_netif_impl_index(ap_netif);
+}

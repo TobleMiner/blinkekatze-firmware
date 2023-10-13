@@ -4,19 +4,28 @@ set(srcs
 	src/bq27546.c
 	${BUILD_DIR}/bq27546_inr18650_df.c
 	src/fast_hsv2rgb_32bit.c
+	src/futil.c
+	src/httpd.c
 	src/i2c_bus.c
+	src/kvparser.c
 	src/lis3dh.c
+	src/magic.c
 	src/main.c
+	src/mime.c
 	src/neighbour.c
 	src/neighbour_rssi_delay_model.c
 	src/neighbour_static_info.c
 	src/neighbour_status.c
+	src/ota.c
 	src/rainbow_fade.c
+	src/ring.c
 	src/shell.c
 	src/spl06.c
 	src/squish.c
 	src/status_leds.c
 	src/strutil.c
+	src/template.c
+	src/util.c
 	src/wireless.c)
 
 idf_component_register(SRCS ${srcs}

@@ -4,9 +4,17 @@
 #include <argtable3/argtable3.h>
 
 #include "neighbour.h"
+#include "ota.h"
 
 void main_loop_lock(void);
 void main_loop_unlock(void);
+
+static int serve_ota(int argc, char **argv) {
+	main_loop_lock();
+	ota_serve_update();
+	main_loop_unlock();
+	return 0;
+}
 
 static int list_neighbours(int argc, char **argv) {
 	main_loop_lock();
@@ -31,6 +39,19 @@ esp_err_t shell_init(void) {
 	};
 
 	esp_err_t err = esp_console_cmd_register(&list_neighbours_cmd);
+	if (err) {
+		return err;
+	}
+
+	const esp_console_cmd_t serve_ota_cmd = {
+		.command = "serve_ota",
+		.help = "Serve own firmware via OTA update to neighbours",
+		.hint = NULL,
+		.func = &serve_ota,
+		.argtable = NULL,
+	};
+
+	err = esp_console_cmd_register(&serve_ota_cmd);
 	if (err) {
 		return err;
 	}
