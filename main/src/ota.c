@@ -8,7 +8,6 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 
-#include <esp_http_client.h>
 #include <esp_image_format.h>
 #include <esp_log.h>
 #include <esp_mac.h>
@@ -19,9 +18,10 @@
 #include <freertos/task.h>
 #include <lwip/if_api.h>
 
-#include "httpd.h"
 #include "neighbour.h"
 #include "neighbour_static_info.h"
+#include "tcp_client.h"
+#include "tcp_memory_server.h"
 
 #define OTA_UPDATE_SERVE_INTERVAL_MS	10000
 #define OTA_UPDATE_DOWNLOAD_STALL_MS	5000
@@ -50,14 +50,13 @@ static const char * ota_state_strings[] = {
 };
 
 typedef struct ota {
-	httpd_t http_server;
+	bool ignore_version;
 	const void *firmware_mmap_ptr;
 	size_t firmware_size;
 	esp_partition_mmap_handle_t firmware_mmap_handle;
 	ota_state_t state;
 	int64_t last_tx_timestamp_us;
 	uint8_t update_peer[ESP_NOW_ETH_ALEN];
-	int mcast_socket;
 	int ap_ifindex;
 	int sta_ifindex;
 	char update_ipv6_address[8 * 4 + 7 + 1];
@@ -65,10 +64,12 @@ typedef struct ota {
 	size_t bytes_transfered;
 	int64_t last_download_progress_timestamp_us;
 	int64_t sta_connect_timestamp_us;
-	portMUX_TYPE http_client_lock;
-	bool ota_successful;
+	portMUX_TYPE tcp_client_lock;
 	esp_ota_handle_t ota_handle;
 	size_t update_size;
+	tcp_memory_server_t tcp_server;
+	tcp_client_t tcp_client;
+	const esp_partition_t *update_part;
 } ota_t;
 
 typedef enum ota_packet_type {
@@ -94,10 +95,6 @@ static const char *TAG = "ota";
 
 static ota_t ota;
 
-static esp_err_t firmware_get_cb(struct httpd_request_ctx* ctx, void* priv) {
-	return httpd_response_write(ctx, (const char *)ota.firmware_mmap_ptr, ota.firmware_size);
-}
-
 static esp_err_t patition_get_image_size(const esp_partition_t *part, size_t *size_out) {
 	esp_partition_pos_t pos = {
 		.offset = part->address,
@@ -115,7 +112,7 @@ static esp_err_t patition_get_image_size(const esp_partition_t *part, size_t *si
 
 esp_err_t ota_init() {
 	memset(&ota, 0, sizeof(ota));
-	ota.http_client_lock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
+	ota.tcp_client_lock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
 	const esp_partition_t *booted_part = esp_ota_get_running_partition();
 	if (!booted_part) {
 		ESP_LOGE(TAG, "Failed to determine booted partition");
@@ -135,46 +132,16 @@ esp_err_t ota_init() {
 		ESP_LOGI(TAG, "Size of booted image: %lu", (unsigned long)ota.firmware_size);
 	}
 
-	err = httpd_init(&ota.http_server, " ", 8);
-	if (err) {
-		return err;
-	}
-
-	err = httpd_add_get_handler(&ota.http_server, "/api/ota/firmware", firmware_get_cb, NULL, 0);
-	if (err) {
-		return err;
-	}
-
 	ota.ap_ifindex = wireless_get_ap_ifindex();
 	ota.sta_ifindex = wireless_get_sta_ifindex();
-	int sock = socket(PF_INET6, SOCK_DGRAM, IPPROTO_IPV6);
-	if (sock < 0) {
-		ESP_LOGE(TAG, "Failed to create OTA advertisement socket\n");
-		return ESP_FAIL;
+
+	struct ifreq ifr;
+	lwip_if_indextoname(ota.ap_ifindex, ifr.ifr_name);
+	err = tcp_memory_server_init(&ota.tcp_server, ota.firmware_mmap_ptr, ota.firmware_size, 1337, &ifr);
+	if (err) {
+		ESP_LOGE(TAG, "Failed to initialize TCP update server");
+		return err;
 	}
-	struct sockaddr_in6 listen_address = { .sin6_family = AF_INET6, .sin6_port = htons(1337) };
-	int ret = bind(sock, (struct sockaddr *)&listen_address, sizeof(listen_address));
-	if (ret) {
-		ESP_LOGE(TAG, "Failed to bind to listen address: %d", errno);
-		return ESP_FAIL;
-	}
-	struct ipv6_mreq group;
-	group.ipv6mr_interface = ota.ap_ifindex;
-	inet_pton(AF_INET6, "ff01::1", &group.ipv6mr_multiaddr);
-	ret = setsockopt(sock, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &group, sizeof(group));
-	if (ret) {
-		ESP_LOGE(TAG, "Failed to subscribe to multicast group: %d", errno);
-		return ESP_FAIL;
-	}
-	const struct timeval rx_timeout = {
-		.tv_sec = 0,
-		.tv_usec = 10
-	};
-	if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &rx_timeout, sizeof(rx_timeout))) {
-		ESP_LOGE(TAG, "Failed to setup OTA advertisment receive timeout\n");
-		return ESP_FAIL;
-	}
-	ota.mcast_socket = sock;
 
 	return ESP_OK;
 }
@@ -188,29 +155,6 @@ static void ota_announce_serve(void) {
 		ota_packet.ota_packet_type = OTA_PACKET_TYPE_INIT;
 		ota_packet.init.firmware_size = ota.firmware_size;
 		wireless_broadcast((const uint8_t *)&ota_packet, sizeof(ota_packet));
-
-		const char *msg = "OTA";
-		struct sockaddr_in6 dst_addr = {
-			.sin6_family = AF_INET6,
-			.sin6_port = htons(1337),
-			.sin6_flowinfo = 0,
-/*
-			.sin6_addr = {
-				.s6_addr = {
-					0xff, 0x02, 0x00, 0x00,
-					0x00, 0x00, 0x00, 0x00,
-					0x00, 0x00, 0x00, 0x00,
-					0x00, 0x00, 0x00, 0x01
-				}
-			},
-*/
-			.sin6_scope_id = (uint32_t)ota.ap_ifindex
-		};
-		inet_pton(AF_INET6, "ff02::1", &dst_addr.sin6_addr);
-		ssize_t ret = sendto(ota.mcast_socket, msg, sizeof(msg), 0, (void *)&dst_addr, sizeof(dst_addr));
-		if (ret != sizeof(msg)) {
-			ESP_LOGE(TAG, "Failed to send multicast announcement: %d", errno);
-		}
 		ota.last_tx_timestamp_us = now;
 	}
 }
@@ -257,47 +201,22 @@ static esp_err_t ota_wait_station_connected() {
 	return ESP_OK;
 }
 
-static esp_err_t ota_http_event_handler(esp_http_client_event_t *event) {
-	if (event->event_id == HTTP_EVENT_ON_DATA) {
-		taskENTER_CRITICAL(&ota.http_client_lock);
-		ota.bytes_transfered += event->data_len;
-		ota.last_download_progress_timestamp_us = esp_timer_get_time();
-		taskEXIT_CRITICAL(&ota.http_client_lock);
-		ESP_LOGD(TAG, "Chunk, len %u, total size %u", event->data_len, ota.bytes_transfered);
-		return esp_ota_write(ota.ota_handle, event->data, event->data_len);
-	} else if (event->event_id == HTTP_EVENT_ON_FINISH) {
-		ESP_LOGD(TAG, "HTTP download done");
-	}
-	return ESP_OK;
-}
-
-static void ota_http_download_task(void *arg) {
-	struct ifreq ifr;
-	lwip_if_indextoname(ota.sta_ifindex, ifr.ifr_name);
-	esp_http_client_config_t config = {
-//		.host = (const char *)arg,
-		.host = "192.168.4.1",
-		.path = "/api/ota/firmware",
-		.port = 80,
-		.event_handler = ota_http_event_handler,
-		.if_name = &ifr
-	};
-	esp_http_client_handle_t client = esp_http_client_init(&config);
-	if (!client) {
-		ESP_LOGE(TAG, "Failed to allocate HTTP client");
-		return;
-	}
+static esp_err_t ota_tcp_client_init(void *priv) {
 	const esp_partition_t *update_part = esp_ota_get_next_update_partition(NULL);
 	if (!update_part) {
 		ESP_LOGE(TAG, "Failed to determine update partition");
-		goto out_http_client;
+		return ESP_FAIL;
 	}
+	ota.update_part = update_part;
 	esp_err_t err = esp_ota_begin(update_part, ota.update_size, &ota.ota_handle);
 	if (err) {
 		ESP_LOGE(TAG, "Failed to start OTA update: %d", err);
-		goto out_http_client;
 	}
-	err = esp_http_client_perform(client);
+	return err;
+}
+
+static esp_err_t ota_tcp_client_finish(void *priv) {
+	esp_err_t err = tcp_client_get_cb_err(&ota.tcp_client);
 	if (err) {
 		ESP_LOGE(TAG, "HTTP download failed: %d", err);
 		esp_ota_abort(ota.ota_handle);
@@ -306,58 +225,56 @@ static void ota_http_download_task(void *arg) {
 		err = esp_ota_end(ota.ota_handle);
 		if (err) {
 			ESP_LOGE(TAG, "OTA verification failed: %d", err);
+			return err;
 		} else {
-			err = esp_ota_set_boot_partition(update_part);
+			err = esp_ota_set_boot_partition(ota.update_part);
 			if (err) {
 				ESP_LOGE(TAG, "Failed to set boot partition: %d", err);
+				return err;
 			} else {
 				ESP_LOGI(TAG, "OTA successful");
-				ota.ota_successful = true;
 			}
 		}
 	}
-out_http_client:
-	esp_http_client_cleanup(client);
-	ota.download_task_exited = true;
-	wireless_disconnect_from_ap();
-	vTaskDelete(NULL);
+	return ESP_OK;
 }
 
-static esp_err_t ota_start_download(const char *host) {
-	ota.download_task_exited = false;
-	ota.ota_successful = false;
+static esp_err_t ota_tcp_client_data_handler(void *priv, const void *data, size_t len) {
+	taskENTER_CRITICAL(&ota.tcp_client_lock);
+	ota.bytes_transfered += len;
 	ota.last_download_progress_timestamp_us = esp_timer_get_time();
-	ota.bytes_transfered = 0;
-	if (xTaskCreate(ota_http_download_task, "ota_http_download", 4096, host, 0, NULL) != pdPASS) {
-		ota.download_task_exited = true;
-		ESP_LOGI(TAG, "Failed to create download task");
-		return ESP_FAIL;
+	taskEXIT_CRITICAL(&ota.tcp_client_lock);
+	ESP_LOGD(TAG, "Chunk, len %u, total size %u", len, ota.bytes_transfered);
+	esp_err_t err = esp_ota_write(ota.ota_handle, data, len);
+	if (err) {
+		ESP_LOGE(TAG, "Failed to write OTA firmware chunk: %d", err);
+		return err;
+	}
+
+	if (ota.bytes_transfered == ota.update_size) {
+		tcp_client_cancel(&ota.tcp_client);
 	}
 
 	return ESP_OK;
 }
 
+static esp_err_t ota_start_download(void) {
+	ota.last_download_progress_timestamp_us = esp_timer_get_time();
+	ota.bytes_transfered = 0;
+
+	struct ifreq ifr;
+	lwip_if_indextoname(ota.sta_ifindex, ifr.ifr_name);
+	struct in_addr inaddr;
+	inet_pton(AF_INET, "192.168.4.1", &inaddr);
+	return tcp_client_init(&ota.tcp_client, &inaddr, 1337, &ifr, ota_tcp_client_init, ota_tcp_client_data_handler, ota_tcp_client_finish, NULL);
+}
+
 static esp_err_t ota_discover_server() {
-	char payload[3];
-	struct sockaddr_in6 src_addr;
-	socklen_t src_addr_len = sizeof(src_addr);
-	fd_set fds_read;
-	FD_ZERO(&fds_read);
-	FD_SET(ota.mcast_socket, &fds_read);
-	struct timeval timeout = { 0 };
-	int ready = select(ota.mcast_socket + 1, &fds_read, NULL, NULL, &timeout);
-	if (ready > 0 && FD_ISSET(ota.mcast_socket, &fds_read)) {
-		ssize_t ret = recvfrom(ota.mcast_socket, payload, sizeof(payload), 0, (struct sockaddr *)&src_addr, &src_addr_len);
-		if (ret > 0) {
-			const char *fromaddr = inet_ntop(AF_INET6, &src_addr.sin6_addr, ota.update_ipv6_address, sizeof(ota.update_ipv6_address));
-			ESP_LOGI(TAG, "Received UDP message from [%s]: %.*s", fromaddr, (size_t)ret, payload);
-			esp_err_t err = ota_start_download(fromaddr);
-			if (err) {
-				ESP_LOGE(TAG, "Failed to start OTA download: %d", err);
-			} else {
-				ota.state = OTA_STATE_DOWNLOAD_IN_PROGRESS;
-			}
-		}
+	esp_err_t err = ota_start_download();
+	if (err) {
+		ESP_LOGE(TAG, "Failed to start OTA download: %d", err);
+	} else {
+		ota.state = OTA_STATE_DOWNLOAD_IN_PROGRESS;
 	}
 	return ESP_OK;
 }
@@ -374,13 +291,13 @@ static esp_err_t ota_supervise_download_progress() {
 		wireless_broadcast((const uint8_t *)&ota_packet, sizeof(ota_packet));
 	}
 
-	if (ota.download_task_exited) {
+	if (tcp_client_is_done(&ota.tcp_client)) {
 		ota.state = OTA_STATE_FINISHED;
-		if (ota.ota_successful) {
-			ESP_LOGI(TAG, "OTA succeeded");
-		} else {
+		if (tcp_client_get_err(&ota.tcp_client) || tcp_client_get_cb_err(&ota.tcp_client)) {
 			ESP_LOGI(TAG, "OTA failed");
 			return ESP_FAIL;
+		} else {
+			ESP_LOGI(TAG, "OTA succeeded");
 		}
 	}
 	return ESP_OK;
@@ -395,18 +312,17 @@ static esp_err_t ota_supervise_download_progress() {
 		ESP_LOGI(TAG, "Download timeout");
 	}
 
-	if (ota.download_task_exited
 */
 }
 
 static esp_err_t ota_handle_done(void) {
-	if (ota.ota_successful) {
+	if (tcp_client_get_err(&ota.tcp_client) || tcp_client_get_cb_err(&ota.tcp_client)) {
+		ota.state = OTA_STATE_IDLE;
+		return ESP_OK;
+	} else {
 		esp_restart();
 		/* Must not return */
 		return ESP_FAIL;
-	} else {
-		ota.state = OTA_STATE_IDLE;
-		return ESP_OK;
 	}
 }
 
@@ -441,7 +357,7 @@ static esp_err_t handle_ota_start_packet(const ota_packet_t *ota_packet, const w
 			if (neighbour_firmware_hash) {
 				const esp_app_desc_t *app_desc = esp_app_get_description();
 				const uint8_t *local_firmware_hash = app_desc->app_elf_sha256;
-				if (memcmp(local_firmware_hash, neighbour_firmware_hash, 32)) {
+				if (memcmp(local_firmware_hash, neighbour_firmware_hash, 32) || ota.ignore_version) {
 					ESP_LOGI(TAG, "Remote firmware is different from local firmware, commencing update");
 					memcpy(ota.update_peer, packet->src_addr, ESP_NOW_ETH_ALEN);
 					ota.update_size = ota_packet->init.firmware_size;
@@ -540,9 +456,13 @@ const char *ota_state_to_string(ota_state_t state) {
 void ota_print_status(void) {
 	printf("State: %s\r\n", ota_state_to_string(ota.state));
 	if (ota.state == OTA_STATE_DOWNLOAD_IN_PROGRESS) {
-		taskENTER_CRITICAL(&ota.http_client_lock);
+		taskENTER_CRITICAL(&ota.tcp_client_lock);
 		size_t progress = ota.bytes_transfered;
-		taskEXIT_CRITICAL(&ota.http_client_lock);
+		taskEXIT_CRITICAL(&ota.tcp_client_lock);
 		printf("Progress: %lu/%lu bytes\r\n", (unsigned long)progress, (unsigned long)ota.update_size);
 	}
+}
+
+void ota_set_ignore_version(bool ignore_version) {
+	ota.ignore_version = ignore_version;
 }

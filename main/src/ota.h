@@ -14,3 +14,4 @@ esp_err_t ota_rx(const wireless_packet_t *packet, const neighbour_t *neigh);
 esp_err_t ota_serve_update(bool serve);
 void ota_indicate_update(color_hsv_t *color);
 void ota_print_status(void);
+void ota_set_ignore_version(bool ignore_version);

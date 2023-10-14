@@ -21,4 +21,6 @@ bool futil_is_path_relative(char* path);
 char* futil_path_concat(char* path, char* basepath);
 const char* futil_fname(const char* path);
 
+int futil_set_fd_blocking(int fd, bool block);
+
 #endif

@@ -25,6 +25,8 @@ set(srcs
 	src/squish.c
 	src/status_leds.c
 	src/strutil.c
+	src/tcp_client.c
+	src/tcp_memory_server.c
 	src/template.c
 	src/util.c
 	src/wireless.c)

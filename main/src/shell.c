@@ -43,6 +43,11 @@ static int ota_status(int argc, char **argv) {
 	return 0;
 }
 
+static int ota_ignore_version(int argc, char **argv) {
+	ota_set_ignore_version(true);
+	return 0;
+}
+
 esp_err_t shell_init(void) {
 	esp_console_repl_t *repl = NULL;
 	esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
@@ -111,6 +116,19 @@ esp_err_t shell_init(void) {
 	};
 
 	err = esp_console_cmd_register(&ota_status_cmd);
+	if (err) {
+		return err;
+	}
+
+	const esp_console_cmd_t ota_ignore_version_cmd = {
+		.command = "ota_ignore_version",
+		.help = "Show OTA update status",
+		.hint = NULL,
+		.func = &ota_ignore_version,
+		.argtable = NULL,
+	};
+
+	err = esp_console_cmd_register(&ota_ignore_version_cmd);
 	if (err) {
 		return err;
 	}

@@ -173,3 +173,24 @@ const char* futil_fname(const char* path) {
 
   return slash_ptr + 1;
 }
+
+int futil_set_fd_blocking(int fd, bool block) {
+	int ret = fcntl(fd, F_GETFL, 0);
+	if (ret == -1) {
+		return errno;
+	}
+
+	int flags = ret;
+	if (block) {
+		flags &= ~O_NONBLOCK;
+	} else {
+		flags |= O_NONBLOCK;
+	}
+
+	ret = fcntl(fd, F_SETFL, flags);
+	if (ret == -1) {
+		return errno;
+	}
+
+	return 0;
+}
