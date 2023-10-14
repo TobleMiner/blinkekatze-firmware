@@ -82,15 +82,28 @@ void squish_apply(const squish_t *squish, color_hsv_t *color) {
 		/* Desaturate to white */
 		color->s -= (int32_t)color->s * bend  / scale1;
 	} else if (bend <= scale1 + scale2) {
+		/* Stay white for a while */
+		color->s = 0;
+
+
 		/* Force to red and saturate */
+/*
 		int32_t local_bend = bend - scale1;
 		color->h = mid_hue;
 		color->s = mid_saturation * local_bend / scale2;
+*/
 	} else {
+		/* Force to red and saturate */
+		int32_t local_bend = bend - scale1 - scale2;
+		color->h = mid_hue;
+		color->s = mid_saturation * local_bend / scale3;
+
 		/* Morph to blue */
+/*
 		int32_t local_bend = bend - scale1 - scale2;
 		color->h = mid_hue + (final_hue - mid_hue) * local_bend / scale3;
 		color->s = mid_saturation + (final_saturation - mid_saturation) * local_bend / scale2;
 		ESP_LOGI(TAG, "Saturation: %u, local_bend: %ld, scale2: %ld", color->s, local_bend, scale2);
+*/
 	}
 }

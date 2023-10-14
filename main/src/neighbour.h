@@ -33,6 +33,12 @@ typedef struct neighbour_static_info_packet {
 	uint8_t firmware_sha256_hash[32];
 } __attribute__((packed)) neighbour_static_info_packet_t;
 
+typedef struct neighbour_ota_info {
+	int64_t last_local_ota_progress_timestamp_us;
+	size_t update_size;
+	size_t update_progress;
+} neighbour_ota_info_t;
+
 typedef struct neighbour {
 	list_head_t list;
 	uint8_t address[ESP_NOW_ETH_ALEN];
@@ -41,6 +47,7 @@ typedef struct neighbour {
 	neighbour_advertisement_t last_advertisement;
 	neighbour_status_packet_t last_status;
 	neighbour_static_info_packet_t last_static_info;
+	neighbour_ota_info_t last_ota_info;
 	int rssi;
 } neighbour_t;
 
@@ -58,3 +65,4 @@ bool neighbour_has_neighbours(void);
 void neighbour_print_list(void);
 void neighbour_update_status(const neighbour_t *neigh, const neighbour_status_packet_t *status);
 void neighbour_update_static_info(const neighbour_t *neigh, const neighbour_static_info_packet_t *static_info);
+void neighbour_update_ota_info(const neighbour_t *neigh, const neighbour_ota_info_t *ota_info);

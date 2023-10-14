@@ -1,0 +1,11 @@
+# ESP-IDF Partition Table
+# Name,			Type,	SubType,	Offset,		Size,		Flags
+
+# bootloader,		boot,	boot,		0x000000,	0x008000,
+# partitiontable,	part,	part,		0x008000,	0x001000,
+phy_init,		data,	phy,		0x009000,	0x001000,
+otadata,		data,	ota,		0x00a000,	0x002000,
+nvs,			data,	nvs,		0x00c000,	0x004000,
+factory,		app,	factory,	0x010000,	0x150000,
+ota_0,			app,	ota_0,		,		0x150000,
+ota_1,			app,	ota_1,		,		0x150000,

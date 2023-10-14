@@ -211,3 +211,8 @@ void neighbour_update_static_info(const neighbour_t *neigh, const neighbour_stat
 	neighbour_t *neigh_ = (neighbour_t *)neigh;
 	neigh_->last_static_info = *static_info;
 }
+
+void neighbour_update_ota_info(const neighbour_t *neigh, const neighbour_ota_info_t *ota_info) {
+	neighbour_t *neigh_ = (neighbour_t *)neigh;
+	neigh_->last_ota_info = *ota_info;
+}

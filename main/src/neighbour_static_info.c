@@ -60,3 +60,11 @@ bool neighbour_static_info_get_ap_password(const neighbour_t *neigh, char *buf, 
 	buf[psk_len] = 0;
 	return true;
 }
+
+const uint8_t *neighbour_static_info_get_firmware_sha256_hash(const neighbour_t *neigh) {
+	if (!neigh->last_static_info.packet_type) {
+		return false;
+	}
+
+	return neigh->last_static_info.firmware_sha256_hash;
+}

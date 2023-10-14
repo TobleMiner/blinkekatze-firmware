@@ -11,7 +11,14 @@ void main_loop_unlock(void);
 
 static int serve_ota(int argc, char **argv) {
 	main_loop_lock();
-	ota_serve_update();
+	ota_serve_update(true);
+	main_loop_unlock();
+	return 0;
+}
+
+static int stop_serving_ota(int argc, char **argv) {
+	main_loop_lock();
+	ota_serve_update(false);
 	main_loop_unlock();
 	return 0;
 }
@@ -52,6 +59,19 @@ esp_err_t shell_init(void) {
 	};
 
 	err = esp_console_cmd_register(&serve_ota_cmd);
+	if (err) {
+		return err;
+	}
+
+	const esp_console_cmd_t stop_serving_ota_cmd = {
+		.command = "stop_serving_ota",
+		.help = "Stop serving own firmware via OTA",
+		.hint = NULL,
+		.func = &stop_serving_ota,
+		.argtable = NULL,
+	};
+
+	err = esp_console_cmd_register(&stop_serving_ota_cmd);
 	if (err) {
 		return err;
 	}

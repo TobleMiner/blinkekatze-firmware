@@ -18,6 +18,7 @@
 #include <hal/gpio_hal.h>
 #include <hal/gpio_ll.h>
 #include <soc/gpio_sig_map.h>
+#include <soc/io_mux_reg.h>
 
 #include "bonk.h"
 #include "bq24295.h"
@@ -187,17 +188,11 @@ static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
 
 lis3dh_t accelerometer;
 static void IRAM_ATTR led_iomux_enable(spi_transaction_t *trans) {
-	esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
-/*
-	gpio_iomux_in(3, FSPID_IN_IDX);
-	gpio_iomux_out(3, SPI2_FUNC_NUM, false);
-*/
+//	esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
 }
 
 static void IRAM_ATTR led_iomux_disable(spi_transaction_t *trans) {
-	gpio_set_direction(3, GPIO_MODE_OUTPUT);
-	gpio_set_level(3, 0);
-	gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
+//	PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
 }
 
 static int red_g = 0;
@@ -456,6 +451,9 @@ void app_main(void) {
 			spi_device_get_trans_result(dev, &xfer_, portMAX_DELAY);
 			transaction_pending = false;
 		}
+		gpio_set_direction(3, GPIO_MODE_OUTPUT);
+		gpio_set_level(3, 0);
+		gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
 
 		squish_update(&squish);
 
@@ -464,6 +462,7 @@ void app_main(void) {
 		bonk_apply(&bonk, &hsv);
 //		hsv.v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
 		squish_apply(&squish, &hsv);
+		ota_indicate_update(&hsv);
 //		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
 		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
 		leds_set_color(led_data + BYTES_RESET, r, g, b);
@@ -474,6 +473,7 @@ void app_main(void) {
 		xfer.rxlength = 0;
 		xfer.tx_buffer = led_data;
 		xfer.rx_buffer = NULL;
+		esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
 		ESP_ERROR_CHECK(spi_device_queue_trans(dev, &xfer, 0));
 		transaction_pending = true;
 

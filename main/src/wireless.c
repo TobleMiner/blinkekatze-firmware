@@ -21,6 +21,7 @@ static char ap_password[WIRELESS_AP_PASSWORD_LENGTH + 1] = { 0 };
 
 static QueueHandle_t rx_queue;
 static bool scan_done = false;
+static bool sta_connected = false;
 static esp_netif_t *ap_netif = NULL;
 static esp_netif_t *sta_netif = NULL;
 
@@ -46,7 +47,17 @@ static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int da
 
 static void sta_event_handler(void *arg, esp_event_base_t event_base,
 			      int32_t event_id, void *event_data) {
-	scan_done = true;
+	switch (event_id) {
+	case WIFI_EVENT_SCAN_DONE:
+		scan_done = true;
+		break;
+	case  WIFI_EVENT_STA_DISCONNECTED:
+		sta_connected = false;
+		break;
+	case WIFI_EVENT_STA_CONNECTED:
+		sta_connected = true;
+		break;
+	}
 }
 
 static void generate_psk(char *dst, size_t len) {
@@ -129,7 +140,7 @@ esp_err_t wireless_init() {
 			.password = { 0 },
 			.channel = 14,
 			.authmode = WIFI_AUTH_WPA2_PSK,
-			.max_connection = 1,
+			.max_connection = 8,
 			.beacon_interval = 500
 		}
 	};
@@ -154,7 +165,7 @@ esp_err_t wireless_init() {
 	esp_netif_create_ip6_linklocal(ap_netif);
 	esp_netif_create_ip6_linklocal(sta_netif);
 
-	err = esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_SCAN_DONE,
+	err = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
 						  &sta_event_handler, NULL, NULL);
 	if (err) {
 		return err;
@@ -246,10 +257,24 @@ esp_err_t wireless_connect_to_ap(wifi_config_t *sta_cfg) {
 		return err;
 	}
 
-	esp_wifi_disconnect();
+	wireless_disconnect_from_ap();
 	return esp_wifi_connect();
+}
+
+esp_err_t wireless_disconnect_from_ap() {
+	esp_err_t err = esp_wifi_connect();
+	sta_connected = false;
+	return err;
 }
 
 int wireless_get_ap_ifindex() {
 	return esp_netif_get_netif_impl_index(ap_netif);
+}
+
+int wireless_get_sta_ifindex() {
+	return esp_netif_get_netif_impl_index(sta_netif);
+}
+
+bool wireless_is_sta_connected() {
+	return sta_connected;
 }

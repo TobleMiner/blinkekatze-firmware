@@ -40,4 +40,7 @@ esp_err_t wireless_get_scan_results(wifi_ap_record_t *ap_records, unsigned int *
 void wireless_clear_scan_results(void);
 const char *wireless_get_ap_password(void);
 esp_err_t wireless_connect_to_ap(wifi_config_t *sta_cfg);
+esp_err_t wireless_disconnect_from_ap(void);
 int wireless_get_ap_ifindex(void);
+int wireless_get_sta_ifindex(void);
+bool wireless_is_sta_connected(void);
