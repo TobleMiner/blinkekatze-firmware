@@ -16,6 +16,7 @@ set(srcs
 	src/neighbour_rssi_delay_model.c
 	src/neighbour_static_info.c
 	src/neighbour_status.c
+	src/node_info.c
 	src/ota.c
 	src/rainbow_fade.c
 	src/ring.c

@@ -39,6 +39,16 @@ typedef enum ota_state {
 	OTA_STATE_FINISHED
 } ota_state_t;
 
+static const char * ota_state_strings[] = {
+	[OTA_STATE_IDLE] = "OTA_STATE_IDLE",
+	[OTA_STATE_SERVING] = "OTA_STATE_SERVING",
+	[OTA_STATE_STATION_CONNECT] = "OTA_STATE_STATION_CONNECT",
+	[OTA_STATE_STATION_CONNECTING] = "OTA_STATE_STATION_CONNECTING",
+	[OTA_STATE_DISCOVER_SERVER] = "OTA_STATE_DISCOVER_SERVER",
+	[OTA_STATE_DOWNLOAD_IN_PROGRESS] = "OTA_STATE_DOWNLOAD_IN_PROGRESS",
+	[OTA_STATE_FINISHED] = "OTA_STATE_FINISHED"
+};
+
 typedef struct ota {
 	httpd_t http_server;
 	const void *firmware_mmap_ptr;
@@ -219,7 +229,7 @@ static esp_err_t ota_initiate_station_connection(uint8_t *update_address) {
 	ESP_LOGI(TAG, "Connecting to peer as station...");
 	esp_err_t err = wireless_connect_to_ap(&cfg);
 	if (err) {
-		ESP_LOGI(TAG, "Failed to connect, going back to idle state");
+		ESP_LOGE(TAG, "Failed to connect to AP, going back to idle state");
 		ota.state = OTA_STATE_IDLE;
 	} else {
 		ota.sta_connect_timestamp_us = esp_timer_get_time();
@@ -235,8 +245,10 @@ static esp_err_t ota_wait_station_connected() {
 	int32_t delta_ms = (now - ota.sta_connect_timestamp_us) / 1000LL;
 
 	if (wireless_is_sta_connected()) {
+		ESP_LOGI(TAG, "Connected to AP, starting server discovery...");
 		ota.state = OTA_STATE_DISCOVER_SERVER;
 	} else if (delta_ms >= OTA_STA_CONNECT_TIMEOUT_MS) {
+		ESP_LOGE(TAG, "Failed to connect, going back to idle state");
 		wireless_disconnect_from_ap();
 		ota.state = OTA_STATE_IDLE;
 		return ESP_ERR_TIMEOUT;
@@ -514,5 +526,23 @@ void ota_indicate_update(color_hsv_t *color) {
 			color->s = 19792;
 //			color->v = 62979;
 		}
+	}
+}
+
+const char *ota_state_to_string(ota_state_t state) {
+	if (state >= ARRAY_SIZE(ota_state_strings)) {
+		return "<invalid>";
+	}
+
+	return ota_state_strings[state];
+}
+
+void ota_print_status(void) {
+	printf("State: %s\r\n", ota_state_to_string(ota.state));
+	if (ota.state == OTA_STATE_DOWNLOAD_IN_PROGRESS) {
+		taskENTER_CRITICAL(&ota.http_client_lock);
+		size_t progress = ota.bytes_transfered;
+		taskEXIT_CRITICAL(&ota.http_client_lock);
+		printf("Progress: %lu/%lu bytes\r\n", (unsigned long)progress, (unsigned long)ota.update_size);
 	}
 }

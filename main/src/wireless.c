@@ -262,7 +262,7 @@ esp_err_t wireless_connect_to_ap(wifi_config_t *sta_cfg) {
 }
 
 esp_err_t wireless_disconnect_from_ap() {
-	esp_err_t err = esp_wifi_connect();
+	esp_err_t err = esp_wifi_disconnect();
 	sta_connected = false;
 	return err;
 }
@@ -277,4 +277,8 @@ int wireless_get_sta_ifindex() {
 
 bool wireless_is_sta_connected() {
 	return sta_connected;
+}
+
+void wireless_get_mac_address(uint8_t *mac) {
+	esp_wifi_get_mac(WIFI_IF_AP, mac);
 }

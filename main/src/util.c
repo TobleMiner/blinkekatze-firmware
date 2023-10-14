@@ -27,3 +27,21 @@ ssize_t hex_decode_inplace(uint8_t *ptr, size_t len) {
 
 	return len / 2;
 }
+
+ssize_t hex_encode(const uint8_t *src, size_t src_len, char *dst, size_t dst_len) {
+	if (dst_len % 2) {
+		return -EINVAL;
+	}
+
+	size_t bytes_out = 0;
+	while (dst_len >= 2 && src_len) {
+		uint8_t byt = *src++;
+		src_len--;
+		*dst++ = nibble_to_hex(byt >> 4);
+		*dst++ = nibble_to_hex(byt & 0xf);
+		dst_len -= 2;
+		bytes_out += 2;
+	}
+
+	return bytes_out;
+}

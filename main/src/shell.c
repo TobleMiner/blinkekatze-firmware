@@ -4,6 +4,7 @@
 #include <argtable3/argtable3.h>
 
 #include "neighbour.h"
+#include "node_info.h"
 #include "ota.h"
 
 void main_loop_lock(void);
@@ -26,6 +27,18 @@ static int stop_serving_ota(int argc, char **argv) {
 static int list_neighbours(int argc, char **argv) {
 	main_loop_lock();
 	neighbour_print_list();
+	main_loop_unlock();
+	return 0;
+}
+
+static int node_info(int argc, char **argv) {
+	node_info_print_local();
+	return 0;
+}
+
+static int ota_status(int argc, char **argv) {
+	main_loop_lock();
+	ota_print_status();
 	main_loop_unlock();
 	return 0;
 }
@@ -72,6 +85,32 @@ esp_err_t shell_init(void) {
 	};
 
 	err = esp_console_cmd_register(&stop_serving_ota_cmd);
+	if (err) {
+		return err;
+	}
+
+	const esp_console_cmd_t node_info_cmd = {
+		.command = "node_info",
+		.help = "Show information on local node",
+		.hint = NULL,
+		.func = &node_info,
+		.argtable = NULL,
+	};
+
+	err = esp_console_cmd_register(&node_info_cmd);
+	if (err) {
+		return err;
+	}
+
+	const esp_console_cmd_t ota_status_cmd = {
+		.command = "ota_status",
+		.help = "Show OTA update status",
+		.hint = NULL,
+		.func = &ota_status,
+		.argtable = NULL,
+	};
+
+	err = esp_console_cmd_register(&ota_status_cmd);
 	if (err) {
 		return err;
 	}
