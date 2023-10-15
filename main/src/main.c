@@ -38,6 +38,7 @@
 #include "squish.h"
 #include "status_leds.h"
 #include "strutil.h"
+#include "uid.h"
 #include "util.h"
 #include "wireless.h"
 
@@ -418,6 +419,9 @@ void app_main(void) {
 				case WIRELESS_PACKET_TYPE_OTA:
 					ota_rx(&packet, neigh);
 					break;
+				case WIRELESS_PACKET_TYPE_UID:
+					uid_rx(&packet);
+					break;
 				default:
 					ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
 				}
@@ -463,6 +467,7 @@ void app_main(void) {
 //		hsv.v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
 		squish_apply(&squish, &hsv);
 		ota_indicate_update(&hsv);
+		uid_apply(&hsv);
 //		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
 		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
 		leds_set_color(led_data + BYTES_RESET, r, g, b);

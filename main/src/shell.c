@@ -1,5 +1,8 @@
 #include "shell.h"
 
+#include <errno.h>
+#include <stdio.h>
+
 #include <esp_console.h>
 #include <esp_log.h>
 #include <esp_system.h>
@@ -8,6 +11,7 @@
 #include "neighbour.h"
 #include "node_info.h"
 #include "ota.h"
+#include "uid.h"
 #include "util.h"
 
 static const char *TAG = "repl";
@@ -63,13 +67,86 @@ static int reboot(int argc, char **argv) {
 	return 0;
 }
 
-#define ADD_COMMAND(name_, help_, func_) do {		\
+static struct {
+	struct arg_str *address;
+	struct arg_str *enable;
+	struct arg_end *end;
+} uid_args;
+
+static int parse_mac_address(const char *str, uint8_t *address) {
+	int num_bytes_out = 0;
+	while (*str && num_bytes_out < ESP_NOW_ETH_ALEN) {
+		if (*str == ':') {
+			str++;
+			continue;
+		}
+
+		if (!str[1]) {
+			return -EINVAL;
+		}
+
+		address[num_bytes_out++] = hex_to_byte(str);
+		str += 2;
+	}
+
+	return num_bytes_out == ESP_NOW_ETH_ALEN ? 0 : -EINVAL;
+}
+
+static int parse_on_off(const char *str, bool *on) {
+	if (!strcasecmp(str, "on") || !strcasecmp(str, "1")) {
+		*on = true;
+		return 0;
+	}
+	if (!strcasecmp(str, "off") || !strcasecmp(str, "0")) {
+		*on = false;
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
+static int uid(int argc, char **argv) {
+	uid_args.address
+->sval[0] = "";
+	uid_args.enable->sval[0] = "";
+
+	int errors = arg_parse(argc, argv, (void **)&uid_args);
+	if (errors) {
+		arg_print_errors(stderr, uid_args.end, argv[0]);
+		return 1;
+	}
+
+	uint8_t address[ESP_NOW_ETH_ALEN];
+	int err = parse_mac_address(uid_args.address->sval[0], address);
+	if (err) {
+		fprintf(stderr, "'%s' is not a valid node address\r\n", uid_args.address->sval[0]);
+		return 1;
+	}
+
+	bool enable;
+	err = parse_on_off(uid_args.enable->sval[0], &enable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", uid_args.enable->sval[0]);
+		return 1;
+	}
+
+	uid_enable(address, enable);
+	uid_enable(address, enable);
+	uid_enable(address, enable);
+
+	return 0;
+}
+
+#define ADD_COMMAND(name_, help_, func_) \
+	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
+
+#define ADD_COMMAND_ARGS(name_, help_, func_, arg_) do {\
 	const esp_console_cmd_t cmd = { 		\
 		.command = (name_),			\
 		.help = (help_),			\
 		.func = &(func_),			\
 		.hint = NULL,				\
-		.argtable = NULL			\
+		.argtable = (arg_)			\
 	};						\
 	esp_err_t err =					\
 		esp_console_cmd_register(&cmd);		\
@@ -114,6 +191,15 @@ esp_err_t shell_init(void) {
 	ADD_COMMAND("reboot",
 		    "Reboot local node",
 		    reboot);
+
+	uid_args.address = arg_str1(NULL, NULL, "<address>", "Address of target node");
+	uid_args.enable = arg_str1(NULL, NULL, "<on/off>", "Switch uid light on or off");
+	uid_args.end = arg_end(2);
+
+	ADD_COMMAND_ARGS("uid",
+			 "Identify device",
+			 uid,
+			 &uid_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);
