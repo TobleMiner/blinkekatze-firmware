@@ -32,7 +32,7 @@ void neighbour_static_info_rx(const wireless_packet_t *packet, const neighbour_t
 void neighbour_static_info_update() {
 	int64_t now = esp_timer_get_time();
 	int64_t delta_ms = (now - neighbour_static_info.last_tx_timestamp) / 1000LL;
-	if (delta_ms >= STATIC_INFO_TX_INTERVAL_MS) {
+	if (delta_ms >= STATIC_INFO_TX_INTERVAL_MS || !neighbour_static_info.last_tx_timestamp) {
 		neighbour_static_info_packet_t info = { .packet_type = WIRELESS_PACKET_TYPE_NEIGHBOUR_STATIC_INFO };
 		memcpy(info.ap_password, wireless_get_ap_password(), WIRELESS_AP_PASSWORD_LENGTH);
 		const esp_app_desc_t *app_desc = esp_app_get_description();

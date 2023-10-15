@@ -127,7 +127,7 @@ void neighbour_housekeeping() {
 		}
 	}
 
-	if (now - neighbours.last_adv_timestamp >= NEIGHBOUR_ADV_INTERVAL_US) {
+	if (now - neighbours.last_adv_timestamp >= NEIGHBOUR_ADV_INTERVAL_US || !neighbours.last_adv_timestamp) {
 		now = esp_timer_get_time();
 		global_clock = get_global_clock(now, NULL);
 		neighbour_advertisement_t adv = {
