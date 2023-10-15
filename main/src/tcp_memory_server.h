@@ -16,6 +16,7 @@ typedef struct tcp_memory_server_client {
 	int socket;
 	size_t offset;
 	int64_t last_tx_timestamp_us;
+	int64_t connect_timestamp_us;
 } tcp_memory_server_client_t;
 
 typedef struct tcp_memory_server {

@@ -51,6 +51,10 @@ static int prepare_fd_sets(tcp_memory_server_t *server, fd_set *fd_read, fd_set 
 }
 
 static void client_close_connection(tcp_memory_server_client_t *client) {
+	int64_t now = esp_timer_get_time();
+	int32_t delta_ms = (now - client->connect_timestamp_us) / 1000LL;
+	int64_t rate = client->offset * 1000LL / (delta_ms + 1);
+	ESP_LOGI(TAG, "Disconnecting client after %lums, average rate %lubytes/s", (unsigned long)delta_ms, (unsigned long)rate);
 	shutdown(client->socket, SHUT_RDWR);
 	close(client->socket);
 	client->socket = -1;
@@ -78,6 +82,7 @@ static void tcp_memory_server_main_loop(void *arg) {
 							client->socket = sock;
 							client->offset = 0;
 							client->last_tx_timestamp_us = now;
+							client->connect_timestamp_us = now;
 						} else {
 							shutdown(sock, SHUT_RDWR);
 							close(sock);
