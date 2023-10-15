@@ -106,8 +106,7 @@ static int parse_on_off(const char *str, bool *on) {
 }
 
 static int uid(int argc, char **argv) {
-	uid_args.address
-->sval[0] = "";
+	uid_args.address->sval[0] = "";
 	uid_args.enable->sval[0] = "";
 
 	int errors = arg_parse(argc, argv, (void **)&uid_args);
