@@ -88,11 +88,14 @@ static void tcp_memory_server_main_loop(void *arg) {
 			for (int i = 0; i < ARRAY_SIZE(server->clients); i++) {
 				tcp_memory_server_client_t *client = &server->clients[i];
 				if (client->socket >= 0) {
-					if (FD_ISSET(client->socket, &fd_err)) {
+					size_t data_len = server->memory_size - client->offset;
+					if (!data_len) {
+						ESP_LOGI(TAG, "Transfer to client %d complete", i);
+						client_close_connection(client);
+					} else if (FD_ISSET(client->socket, &fd_err)) {
 						ESP_LOGE(TAG, "Socket of client %d failed", i);
 						client_close_connection(client);
 					} else if (FD_ISSET(client->socket, &fd_write)) {
-						size_t data_len = server->memory_size - client->offset;
 						if (data_len > CHUNK_SIZE) {
 							data_len = CHUNK_SIZE;
 						}
