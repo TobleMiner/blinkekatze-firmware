@@ -289,6 +289,7 @@ static esp_err_t ota_supervise_download_progress() {
 		ota_packet.progress.download_size = ota.update_size;
 		ota_packet.progress.download_progress = ota.bytes_transfered;
 		wireless_broadcast((const uint8_t *)&ota_packet, sizeof(ota_packet));
+		ota.last_tx_timestamp_us = now;
 	}
 
 	if (tcp_client_is_done(&ota.tcp_client)) {
