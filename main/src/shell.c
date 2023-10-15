@@ -2,6 +2,7 @@
 
 #include <esp_console.h>
 #include <esp_log.h>
+#include <esp_system.h>
 #include <argtable3/argtable3.h>
 
 #include "neighbour.h"
@@ -57,6 +58,11 @@ static int ota_ignore_version(int argc, char **argv) {
 	return 0;
 }
 
+static int reboot(int argc, char **argv) {
+	esp_restart();
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) do {		\
 	const esp_console_cmd_t cmd = { 		\
 		.command = (name_),			\
@@ -104,6 +110,10 @@ esp_err_t shell_init(void) {
 	ADD_COMMAND("ota_ignore_version",
 		    "Force OTA update even if version already installed",
 		    ota_ignore_version);
+
+	ADD_COMMAND("reboot",
+		    "Reboot local node",
+		    reboot);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);
