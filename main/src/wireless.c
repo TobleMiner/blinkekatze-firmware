@@ -162,9 +162,6 @@ esp_err_t wireless_init() {
 		return err;
 	}
 
-	esp_netif_create_ip6_linklocal(ap_netif);
-	esp_netif_create_ip6_linklocal(sta_netif);
-
 	err = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
 						  &sta_event_handler, NULL, NULL);
 	if (err) {
