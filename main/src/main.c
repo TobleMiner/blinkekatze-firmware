@@ -100,10 +100,10 @@ typedef struct rgb16 {
 	uint16_t b;
 } __attribute__((packed)) rgb16_t;
 
-//static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_12bit_bin);
-static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_32x32x32_12bit_bin);
+static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_12bit_bin);
+//static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_32x32x32_12bit_bin);
 
-#define COLOR_TABLE_SIZE	32UL
+#define COLOR_TABLE_SIZE	16UL
 #define LOOKUP_DIV		((1 << 16) / COLOR_TABLE_SIZE)
 
 static void lookup_color(const rgb16_t *in, rgb16_t *out) {
