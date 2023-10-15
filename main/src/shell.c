@@ -12,7 +12,12 @@ void main_loop_unlock(void);
 
 static int serve_ota(int argc, char **argv) {
 	main_loop_lock();
-	ota_serve_update(true);
+	esp_err_t err = ota_serve_update(true);
+	if (err) {
+		printf("Failed to start serving updates: %d\r\n", err);
+	} else {
+		printf("Serving OTA update to neighbours\r\n");
+	}
 	main_loop_unlock();
 	return 0;
 }
