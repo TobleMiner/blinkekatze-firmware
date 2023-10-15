@@ -24,6 +24,7 @@ static bool scan_done = false;
 static bool sta_connected = false;
 static esp_netif_t *ap_netif = NULL;
 static esp_netif_t *sta_netif = NULL;
+static uint8_t ap_mac_address[ESP_NOW_ETH_ALEN];
 
 static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int data_len) {
 	int64_t rx_timestamp = esp_timer_get_time();
@@ -128,7 +129,6 @@ esp_err_t wireless_init() {
 		return err;
 	}
 
-	uint8_t ap_mac_address[6];
 	err = esp_wifi_get_mac(WIFI_IF_AP, ap_mac_address);
 	if (err) {
 		return err;
@@ -276,6 +276,6 @@ bool wireless_is_sta_connected() {
 	return sta_connected;
 }
 
-void wireless_get_mac_address(uint8_t *mac) {
-	esp_wifi_get_mac(WIFI_IF_AP, mac);
+const uint8_t *wireless_get_mac_address() {
+	return ap_mac_address;
 }

@@ -44,4 +44,4 @@ esp_err_t wireless_disconnect_from_ap(void);
 int wireless_get_ap_ifindex(void);
 int wireless_get_sta_ifindex(void);
 bool wireless_is_sta_connected(void);
-void wireless_get_mac_address(uint8_t *mac);
+const uint8_t *wireless_get_mac_address(void);

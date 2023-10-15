@@ -9,8 +9,7 @@
 #include "wireless.h"
 
 void node_info_print_local() {
-	uint8_t address[ESP_NOW_ETH_ALEN];
-	wireless_get_mac_address(address);
+	const uint8_t *address = wireless_get_mac_address();
 	printf("Node address:     "MACSTR"\r\n", MAC2STR(address));
 	const esp_app_desc_t *app_desc = esp_app_get_description();
 	printf("Firmware version: %s\r\n", app_desc->version);
