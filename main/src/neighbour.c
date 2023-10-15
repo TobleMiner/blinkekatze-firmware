@@ -184,21 +184,35 @@ bool neighbour_has_neighbours(void) {
 }
 
 void neighbour_print_list(void) {
-	printf("Address             Uptime       Age      RSSI     Firmware version\r\n");
-	printf("=======================================================================\r\n");
-	//      aa:bb:cc:dd:ee:ff   xxxxxxxxms   xxxxms   -90dBm   <firmware version>
+	printf("Address             Uptime       Age      RSSI     SoC    Time to empty   Firmware version\r\n");
+	printf("==========================================================================================\r\n");
+	//      aa:bb:cc:dd:ee:ff   xxxxxxxxms   xxxxms   -90dBm   100%   65535min        <firmware version>
 	neighbour_t *neigh;
 	int64_t now = esp_timer_get_time();
 	LIST_FOR_EACH_ENTRY(neigh, &neighbours.neighbours, list) {
+		bool neigh_status_valid = !!neigh->last_status.packet_type;
 		uint64_t age_ms = now - neigh->last_local_adv_rx_timestamp_us;
 		bool firmware_str_valid = !!neigh->last_static_info.packet_type;
 		const char *firmware_str = neigh->last_static_info.firmware_version;
-		printf(MACSTR"   %8lums   %4lums   %2ddBm   %.*s\r\n", MAC2STR(neigh->address),
-		       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
-		       (unsigned long)(age_ms / 1000ULL),
-		       neigh->rssi,
-		       firmware_str_valid ? strnlen(firmware_str, sizeof(neigh->last_static_info.firmware_version)) : 3,
-		       firmware_str_valid ? firmware_str : "???");
+		if (neigh_status_valid) {
+			printf(MACSTR"   %8lums   %4lums   %2ddBm   %3d%%   %5dmin        %.*s\r\n",
+			       MAC2STR(neigh->address),
+			       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
+			       (unsigned long)(age_ms / 1000ULL),
+			       neigh->rssi,
+			       neigh->last_status.battery_soc_percent,
+			       neigh->last_status.battery_time_to_empty_min,
+			       firmware_str_valid ? strnlen(firmware_str, sizeof(neigh->last_static_info.firmware_version)) : 3,
+			       firmware_str_valid ? firmware_str : "???");
+		} else {
+			printf(MACSTR"   %8lums   %4lums   %2ddBm   ???       ???         %.*s\r\n",
+			       MAC2STR(neigh->address),
+			       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
+			       (unsigned long)(age_ms / 1000ULL),
+			       neigh->rssi,
+			       firmware_str_valid ? strnlen(firmware_str, sizeof(neigh->last_static_info.firmware_version)) : 3,
+			       firmware_str_valid ? firmware_str : "???");
+		}
 	}
 }
 
