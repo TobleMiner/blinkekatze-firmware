@@ -62,7 +62,7 @@ void uid_apply(color_hsv_t *color) {
 		if (cycle_ms >= UID_BLINK_INTERVAL_MS) {
 			color->v = HSV_VAL_MAX;
 		} else {
-			color->s = 0;
+			color->v = 0;
 		}
 	}
 }
