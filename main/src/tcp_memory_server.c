@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 
 #include <esp_log.h>
+#include <esp_timer.h>
 
 #include "futil.h"
 #include "util.h"
@@ -14,6 +15,7 @@
 #define CHUNK_SIZE 		1024
 #define MAX_PENDING_CONNECTIONS	8
 #define TASK_STACK_SIZE		4096
+#define CLIENT_DATA_TIMEOUT_MS  10000
 
 static const char *TAG = "tcp_memory_server";
 
@@ -48,6 +50,12 @@ static int prepare_fd_sets(tcp_memory_server_t *server, fd_set *fd_read, fd_set 
 	return fd;
 }
 
+static void client_close_connection(tcp_memory_server_client_t *client) {
+	shutdown(client->socket, SHUT_RDWR);
+	close(client->socket);
+	client->socket = -1;
+}
+
 static void tcp_memory_server_main_loop(void *arg) {
 	tcp_memory_server_t *server = arg;
 	while (!server->exit) {
@@ -57,7 +65,8 @@ static void tcp_memory_server_main_loop(void *arg) {
 		int max_fd = prepare_fd_sets(server, &fd_read, &fd_write, &fd_err);
 		struct timeval timeout = { .tv_sec = 1, .tv_usec = 0 };
 		int ret = select(max_fd + 1, &fd_read, &fd_write, &fd_err, &timeout);
-		if (ret > 0) {
+		if (ret >= 0) {
+			int64_t now = esp_timer_get_time();
 			if (FD_ISSET(server->listen_socket, &fd_read)) {
 				do {
 					ret = accept(server->listen_socket, NULL, NULL);
@@ -68,6 +77,7 @@ static void tcp_memory_server_main_loop(void *arg) {
 							tcp_memory_server_client_t *client = &server->clients[client_slot];
 							client->socket = sock;
 							client->offset = 0;
+							client->last_tx_timestamp_us = now;
 						} else {
 							shutdown(sock, SHUT_RDWR);
 							close(sock);
@@ -75,15 +85,12 @@ static void tcp_memory_server_main_loop(void *arg) {
 					}
 				} while (ret >= 0);
 			}
-			// TODO: close client socket if no data sent for some time
 			for (int i = 0; i < ARRAY_SIZE(server->clients); i++) {
 				tcp_memory_server_client_t *client = &server->clients[i];
 				if (client->socket >= 0) {
 					if (FD_ISSET(client->socket, &fd_err)) {
 						ESP_LOGE(TAG, "Socket of client %d failed", i);
-						shutdown(client->socket, SHUT_RDWR);
-						close(client->socket);
-						client->socket = -1;
+						client_close_connection(client);
 					} else if (FD_ISSET(client->socket, &fd_write)) {
 						size_t data_len = server->memory_size - client->offset;
 						if (data_len > CHUNK_SIZE) {
@@ -92,11 +99,16 @@ static void tcp_memory_server_main_loop(void *arg) {
 						ssize_t write_len = write(client->socket, server->memory_addr + client->offset, data_len);
 						if (write_len >= 0) {
 							client->offset += write_len;
+							client->last_tx_timestamp_us = now;
 						} else if (errno != EAGAIN && errno != EWOULDBLOCK) {
 							ESP_LOGE(TAG, "Failed to write to client %d: %d", i, errno);
-							shutdown(client->socket, SHUT_RDWR);
-							close(client->socket);
-							client->socket = -1;
+							client_close_connection(client);
+						}
+					} else {
+						int32_t delta_ms = (now - client->last_tx_timestamp_us) / 1000LL;
+						if (delta_ms >= CLIENT_DATA_TIMEOUT_MS) {
+							ESP_LOGE(TAG, "Data timeout on client %d: %d", i, errno);
+							client_close_connection(client);
 						}
 					}
 				}
@@ -131,6 +143,14 @@ esp_err_t tcp_memory_server_init(tcp_memory_server_t *server, const uint8_t *mem
 		return ESP_FAIL;
 	}
 
+	const int one = 1;
+	int ret = setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+	if (ret < 0) {
+		ESP_LOGE(TAG, "Failed to enable SO_REUSEADDR: %d", errno);
+		retval = ESP_FAIL;
+		goto out_socket;
+	}
+
 	struct sockaddr_in listen_address = {
 		.sin_family = AF_INET,
 		.sin_port = htons(port),
@@ -139,7 +159,7 @@ esp_err_t tcp_memory_server_init(tcp_memory_server_t *server, const uint8_t *mem
 		}
 	};
 
-	int ret = bind(listen_socket, (struct sockaddr *)&listen_address, sizeof(listen_address));
+	ret = bind(listen_socket, (struct sockaddr *)&listen_address, sizeof(listen_address));
 	if (ret < 0) {
 		ESP_LOGE(TAG, "Failed to bind listen socket: %d", errno);
 		retval = ESP_FAIL;

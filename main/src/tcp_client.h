@@ -29,6 +29,8 @@ typedef struct tcp_client {
 	EventGroupHandle_t task_events;
 	uint8_t data_buf[TCP_CLIENT_BUFFER_SIZE];
 	bool do_exit;
+	bool connected;
+	int64_t last_read_timestamp_us;
 } tcp_client_t;
 
 esp_err_t tcp_client_init(tcp_client_t *client, struct in_addr *address, unsigned short port, const struct ifreq *bind_iface, tcp_client_init_cb_f init_cb, tcp_client_data_cb_f data_cb, tcp_client_finish_cb_f finish_cb, void *cb_priv);

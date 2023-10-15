@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 
 #include <esp_log.h>
+#include <esp_timer.h>
 
 #include "futil.h"
 #include "util.h"
@@ -42,13 +43,6 @@ static void tcp_client_main_loop(void *arg) {
 		goto out_socket;
 	}
 
-	err = connect(sock, (struct sockaddr *)&client->remote_addr, sizeof(client->remote_addr));
-	if (err < 0) {
-		ESP_LOGE(TAG, "Failed to connect to server: %d", errno);
-		client->err = errno;
-		goto out_socket;
-	}
-
 	err = futil_set_fd_blocking(sock, false);
 	if (err) {
 		ESP_LOGE(TAG, "Failed to set client socket non-blocking: %d", err);
@@ -56,16 +50,33 @@ static void tcp_client_main_loop(void *arg) {
 		goto out_socket;
 	}
 
+	err = connect(sock, (struct sockaddr *)&client->remote_addr, sizeof(client->remote_addr));
+	if (!err) {
+		client->connected = true;
+	} else if (err < 0 && errno != EINPROGRESS) {
+		ESP_LOGE(TAG, "Failed to connect to server: %d", errno);
+		client->err = errno;
+		goto out_socket;
+	}
+	client->last_read_timestamp_us = esp_timer_get_time();
+
 	ssize_t read_len;
 	while (!client->do_exit) {
 		fd_set fds_read;
+		fd_set fds_write;
 		fd_set fds_err;
 		FD_ZERO(&fds_read);
+		FD_ZERO(&fds_write);
 		FD_ZERO(&fds_err);
-		FD_SET(sock, &fds_read);
+		if (client->connected) {
+			FD_SET(sock, &fds_read);
+		} else {
+			FD_SET(sock, &fds_write);
+		}
 		FD_SET(sock, &fds_err);
 		struct timeval timeout = { .tv_sec = 1, .tv_usec = 0 };
-		int ret = select(sock + 1, &fds_read, NULL, &fds_err, &timeout);
+		int ret = select(sock + 1, &fds_read, &fds_write, &fds_err, &timeout);
+		int64_t now = esp_timer_get_time();
 		if (ret > 0) {
 			if (FD_ISSET(sock, &fds_read)) {
 				read_len = read(sock, client->data_buf, sizeof(client->data_buf));
@@ -76,14 +87,45 @@ static void tcp_client_main_loop(void *arg) {
 						client->cb_err = cb_err;
 						break;
 					}
+					client->last_read_timestamp_us = now;
 				} else if (read_len < 0) {
 					ESP_LOGE(TAG, "Read failed: %d", errno);
 					client->err = errno;
 					break;
 				}
 			}
+			if (FD_ISSET(sock, &fds_write)) {
+				int err = 0;
+				socklen_t errlen = sizeof(err);
+				int ret = getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &errlen);
+				if (ret < 0) {
+					ESP_LOGE(TAG, "Failed to get client fd error: %d", errno);
+					client->err = errno;
+					break;
+				}
+				if (err) {
+					ESP_LOGE(TAG, "Failed to connect: %d", err);
+					client->err = err;
+					break;
+				}
+				client->last_read_timestamp_us = now;
+				client->connected = true;
+			}
 			if (FD_ISSET(sock, &fds_err)) {
-				ESP_LOGE(TAG, "Client fd has errors, bailing out");
+				int err = 0;
+				socklen_t errlen = sizeof(err);
+				int ret = getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &errlen);
+				if (ret < 0) {
+					ESP_LOGE(TAG, "Failed to get client fd error: %d", errno);
+					client->err = errno;
+					break;
+				}
+				if (err) {
+					ESP_LOGE(TAG, "Socket failed: %d", err);
+					client->err = err;
+					break;
+				}
+				ESP_LOGE(TAG, "select indicates error but no SO_ERROR present! Bug?");
 				client->err = -1;
 				break;
 			}

@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <sys/socket.h>
 
 #include <freertos/FreeRTOS.h>
@@ -14,6 +15,7 @@
 typedef struct tcp_memory_server_client {
 	int socket;
 	size_t offset;
+	int64_t last_tx_timestamp_us;
 } tcp_memory_server_client_t;
 
 typedef struct tcp_memory_server {
