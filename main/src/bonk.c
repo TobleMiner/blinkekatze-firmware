@@ -35,7 +35,7 @@ static void bonk_tx(int64_t timestamp, uint32_t magnitude) {
 }
 
 static void process_bonk(bonk_t *bonk, int64_t now, int64_t timestamp, uint32_t magnitude) {
-	ESP_LOGI(TAG, "bonk active for %dms at intensity: %lu", (int)(((int64_t)BONK_DURATION_US - (now - timestamp)) / 1000LL), (long unsigned int)magnitude);
+	ESP_LOGD(TAG, "bonk active for %dms at intensity: %lu", (int)(((int64_t)BONK_DURATION_US - (now - timestamp)) / 1000LL), (long unsigned int)magnitude);
 	bool last_bonk_timeout = now > bonk->last_bonk_us + BONK_DURATION_US;
 	bool stronger_than_last_bonk = magnitude >= bonk->last_bonk_magnitude;
 	if (last_bonk_timeout || stronger_than_last_bonk) {
@@ -55,7 +55,7 @@ esp_err_t bonk_update(bonk_t *bonk) {
 		uint32_t velocity_magnitude = ABS(lis3dh_get_click_velocity(bonk->accel));
 		bonk_tx(now, velocity_magnitude);
 		process_bonk(bonk, now, now, velocity_magnitude);
-		ESP_LOGI(TAG, "BONK! intensity: %lu", (long unsigned int)velocity_magnitude);
+		ESP_LOGD(TAG, "BONK! intensity: %lu", (long unsigned int)velocity_magnitude);
 	}
 	return ESP_OK;
 }
