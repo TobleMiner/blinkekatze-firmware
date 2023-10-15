@@ -54,7 +54,7 @@ static void client_close_connection(tcp_memory_server_client_t *client) {
 	int64_t now = esp_timer_get_time();
 	int32_t delta_ms = (now - client->connect_timestamp_us) / 1000LL;
 	int64_t rate = client->offset * 1000LL / (delta_ms + 1);
-	ESP_LOGI(TAG, "Disconnecting client after %lums, average rate %lubytes/s", (unsigned long)delta_ms, (unsigned long)rate);
+	ESP_LOGI(TAG, "Disconnecting client after %lums, average rate %lu bytes/s", (unsigned long)delta_ms, (unsigned long)rate);
 	shutdown(client->socket, SHUT_RDWR);
 	close(client->socket);
 	client->socket = -1;
