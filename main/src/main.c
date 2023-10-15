@@ -426,7 +426,7 @@ void app_main(void) {
 
 		if (wireless_is_scan_done()) {
 			unsigned int num_results = wireless_get_num_scan_results();
-			ESP_LOGI(TAG, "Scan complete, found %u APs", num_results);
+			ESP_LOGD(TAG, "Scan complete, found %u APs", num_results);
 			wifi_ap_record_t *scan_results = calloc(num_results, sizeof(wifi_ap_record_t));
 			if (scan_results) {
 				esp_err_t err = wireless_get_scan_results(scan_results, &num_results);

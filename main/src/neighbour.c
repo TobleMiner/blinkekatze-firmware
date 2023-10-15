@@ -162,7 +162,7 @@ esp_err_t neighbour_update_rssi(const uint8_t *address, int rssi) {
 		return ESP_ERR_NOT_FOUND;
 	}
 
-	ESP_LOGI(TAG, "Updating RSSI of neighbour "MACSTR" to %d", MAC2STR(neigh->address), rssi);
+	ESP_LOGD(TAG, "Updating RSSI of neighbour "MACSTR" to %d", MAC2STR(neigh->address), rssi);
 	neigh->rssi = rssi;
 	return ESP_OK;
 }
