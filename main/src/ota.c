@@ -25,9 +25,10 @@
 
 #define OTA_UPDATE_SERVE_INTERVAL_MS	10000
 #define OTA_UPDATE_DOWNLOAD_STALL_MS	5000
-#define OTA_UPDATE_PROGRESS_INTERVAL_MS	5000
+#define OTA_UPDATE_PROGRESS_INTERVAL_MS	1000
 #define OTA_UPDATE_BLINK_INTERVAL_MS	500
 #define OTA_STA_CONNECT_TIMEOUT_MS	10000
+#define OTA_STATUS_TIMEOUT_MS		5000
 
 typedef enum ota_state {
 	OTA_STATE_IDLE,
@@ -59,8 +60,6 @@ typedef struct ota {
 	uint8_t update_peer[ESP_NOW_ETH_ALEN];
 	int ap_ifindex;
 	int sta_ifindex;
-	char update_ipv6_address[8 * 4 + 7 + 1];
-	bool download_task_exited;
 	size_t bytes_transfered;
 	int64_t last_download_progress_timestamp_us;
 	int64_t sta_connect_timestamp_us;
@@ -466,4 +465,19 @@ void ota_print_status(void) {
 
 void ota_set_ignore_version(bool ignore_version) {
 	ota.ignore_version = ignore_version;
+}
+
+ssize_t ota_neighbour_info_to_string(const neighbour_ota_info_t *info, char *dst, size_t len) {
+	int64_t now = esp_timer_get_time();
+	int32_t delta_ms = (now - info->last_local_ota_progress_timestamp_us) / 1000LL;
+	if (!info->last_local_ota_progress_timestamp_us || delta_ms > OTA_STATUS_TIMEOUT_MS) {
+		return snprintf(dst, len, "Idle");
+	}
+
+	if (!info->update_size) {
+		return snprintf(dst, len, "Updating...");
+	}
+
+	unsigned int progress_percent = DIV_ROUND_UP(info->update_progress * 100UL, info->update_size);
+	return snprintf(dst, len, "Updating... %3u%%", progress_percent);
 }
