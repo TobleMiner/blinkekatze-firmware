@@ -239,3 +239,7 @@ void neighbour_update_ota_info(const neighbour_t *neigh, const neighbour_ota_inf
 	neighbour_t *neigh_ = (neighbour_t *)neigh;
 	neigh_->last_ota_info = *ota_info;
 }
+
+int8_t neighbour_get_rssi(const neighbour_t *neigh) {
+	return neigh->rssi;
+}

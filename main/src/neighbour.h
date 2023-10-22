@@ -66,3 +66,4 @@ void neighbour_print_list(void);
 void neighbour_update_status(const neighbour_t *neigh, const neighbour_status_packet_t *status);
 void neighbour_update_static_info(const neighbour_t *neigh, const neighbour_static_info_packet_t *static_info);
 void neighbour_update_ota_info(const neighbour_t *neigh, const neighbour_ota_info_t *ota_info);
+int8_t neighbour_get_rssi(const neighbour_t *neigh);

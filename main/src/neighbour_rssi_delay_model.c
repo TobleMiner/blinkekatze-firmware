@@ -5,11 +5,15 @@ int64_t neighbour_calculate_rssi_delay(const neighbour_rssi_delay_model_t *model
 		return 0;
 	}
 
-	if (neigh->rssi > model->delay_rssi_threshold) {
+	return neighbour_calculate_rssi_delay_rssi(model, neigh->rssi);
+}
+
+int64_t neighbour_calculate_rssi_delay_rssi(const neighbour_rssi_delay_model_t *model, int8_t rssi) {
+	if (rssi > model->delay_rssi_threshold) {
 		return 0;
 	}
 
-	int64_t effective_rssi = neigh->rssi;
+	int64_t effective_rssi = rssi;
 	if (model->delay_rssi_limit && effective_rssi < model->delay_rssi_limit) {
 		effective_rssi = model->delay_rssi_limit;
 	}
