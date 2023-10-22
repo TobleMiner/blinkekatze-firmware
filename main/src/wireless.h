@@ -20,7 +20,8 @@ typedef enum wireless_packet_type {
 	WIRELESS_PACKET_TYPE_NEIGHBOUR_STATUS = 2,
 	WIRELESS_PACKET_TYPE_NEIGHBOUR_STATIC_INFO = 3,
 	WIRELESS_PACKET_TYPE_OTA = 4,
-	WIRELESS_PACKET_TYPE_UID = 5
+	WIRELESS_PACKET_TYPE_UID = 5,
+	WIRELESS_PACKET_TYPE_SQUISH = 6
 } wireless_packet_type_t;
 
 typedef struct wireless_packet {

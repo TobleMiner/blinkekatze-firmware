@@ -236,6 +236,7 @@ void hsv_input_loop(void *arg) {
 static SemaphoreHandle_t main_lock;
 static StaticSemaphore_t main_lock_buffer;
 
+static squish_t squish;
 void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
@@ -342,7 +343,6 @@ void app_main(void) {
 
 	spl06_t barometer;
 	ESP_ERROR_CHECK(spl06_init(&barometer, SPI2_HOST, 9));
-	squish_t squish;
 	squish_init(&squish, &barometer);
 
 //	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
@@ -421,6 +421,9 @@ void app_main(void) {
 					break;
 				case WIRELESS_PACKET_TYPE_UID:
 					uid_rx(&packet);
+					break;
+				case WIRELESS_PACKET_TYPE_SQUISH:
+					squish_rx(&squish, &packet, neigh);
 					break;
 				default:
 					ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
