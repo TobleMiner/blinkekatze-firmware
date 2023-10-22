@@ -148,7 +148,7 @@ esp_err_t ota_init() {
 static void ota_announce_serve(void) {
 	int64_t now = esp_timer_get_time();
 	int32_t delta_ms = (now - ota.last_tx_timestamp_us) / 1000;
-	if (delta_ms >= OTA_UPDATE_SERVE_INTERVAL_MS) {
+	if (delta_ms >= OTA_UPDATE_SERVE_INTERVAL_MS || !ota.last_tx_timestamp_us) {
 		ota_packet_t ota_packet = { 0 };
 		ota_packet.packet_type = WIRELESS_PACKET_TYPE_OTA;
 		ota_packet.ota_packet_type = OTA_PACKET_TYPE_INIT;
