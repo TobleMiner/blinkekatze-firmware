@@ -55,24 +55,6 @@ static const char *TAG = "main";
 #define BYTES_DATA	((NUM_LEDS) * 24 * (BITS_PER_SYMBOL)) / 8
 #define BYTES_RESET	(250 / 8)
 
-const uint8_t gamma_table[] = {
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,
-    1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,
-    2,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  5,  5,  5,
-    5,  6,  6,  6,  6,  7,  7,  7,  7,  8,  8,  8,  9,  9,  9, 10,
-   10, 10, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 16, 16,
-   17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 24, 24, 25,
-   25, 26, 27, 27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 35, 36,
-   37, 38, 39, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 50,
-   51, 52, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 68,
-   69, 70, 72, 73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 89,
-   90, 92, 93, 95, 96, 98, 99,101,102,104,105,107,109,110,112,114,
-  115,117,119,120,122,124,126,127,129,131,133,135,137,138,140,142,
-  144,146,148,150,152,154,156,158,160,162,164,167,169,171,173,175,
-  177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
-  215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
-
 static uint8_t *led_set_color_component(uint8_t *data, uint8_t val) {
 	for (int i = 0; i < 8; i++) {
 		bool bit = !!(val & (1 << (7 - i)));
@@ -283,7 +265,6 @@ void app_main(void) {
 	ESP_ERROR_CHECK(!led_data);
 	memset(led_data, 0, dma_buf_len);
 
-//	leds_set_color(led_data + BYTES_RESET, 0xffffff);
 	leds_set_color(led_data + BYTES_RESET, 0x00, 0x00, 0x00);
 
 	spi_transaction_t xfer = {
@@ -354,7 +335,6 @@ void app_main(void) {
 
 	shell_init();
 
-	uint8_t bright = 0;
 	bool shutdown = false;
 	unsigned loop_interval_ms = 20;
 	bool transaction_pending = false;
@@ -375,21 +355,6 @@ void app_main(void) {
 			shutdown = false;
 		}
 
-		uint16_t r, g, b;
-		neighbour_t *clock_source;
-		int64_t global_clock_us = neighbour_get_global_clock_and_source(&clock_source);
-		neighbour_rssi_delay_model_t delay_model = {
-			-20,
-			2000,
-			-60,
-			0
-		};
-		int64_t clock_delay = neighbour_calculate_rssi_delay(&delay_model, clock_source);
-		int64_t delayed_clock = global_clock_us - clock_delay;
-		unsigned int hue = ((((uint64_t)delayed_clock / 1000UL) * HSV_HUE_STEPS) / 5000) % HSV_HUE_STEPS;
-//		ESP_LOGI(TAG, "Hue: %u", hue * 360 / HSV_HUE_STEPS);
-//		fast_hsv2rgb_32bit(hue, HSV_SAT_MAX, HSV_VAL_MAX / 10, &r, &g, &b);
-
 		bonk_update(&bonk);
 
 		xSemaphoreTake(main_lock, portMAX_DELAY);
@@ -397,7 +362,7 @@ void app_main(void) {
 		ota_update();
 
 		wireless_packet_t packet;
-		if (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
+		while (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
 			ESP_LOGD(TAG, "Dequeued packet, size: %u bytes", packet.len);
 			if (packet.len >= 1) {
 				const neighbour_t *neigh = neighbour_find_by_address(packet.src_addr);
@@ -467,16 +432,16 @@ void app_main(void) {
 		color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 };
 		rainbow_fade_apply(&hsv);
 		bonk_apply(&bonk, &hsv);
-//		hsv.v = (uint32_t)bonk_intensity * (uint32_t)HSV_VAL_MAX / (uint32_t)BONK_MAX_INTENSITY;
 		squish_apply(&squish, &hsv);
 		ota_indicate_update(&hsv);
 		uid_apply(&hsv);
+
+		uint16_t r, g, b;
 //		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
 		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
 		leds_set_color(led_data + BYTES_RESET, r, g, b);
 //		leds_set_color(led_data + BYTES_RESET, (uint16_t)red_g, (uint16_t)green_g, (uint16_t)blue_g);
 
-		bright += 10;
 		xfer.length = dma_buf_len * 8;
 		xfer.rxlength = 0;
 		xfer.tx_buffer = led_data;
