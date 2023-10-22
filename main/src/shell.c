@@ -11,6 +11,7 @@
 #include "neighbour.h"
 #include "node_info.h"
 #include "ota.h"
+#include "rainbow_fade.h"
 #include "uid.h"
 #include "util.h"
 
@@ -136,6 +137,28 @@ static int uid(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_int *cycle_time_ms;
+	struct arg_end *end;
+} rainbow_fade_cycle_time_args;
+
+static int rainbow_fade_cycle_time(int argc, char **argv) {
+	int errors = arg_parse(argc, argv, (void **)&rainbow_fade_cycle_time_args);
+	if (errors) {
+		arg_print_errors(stderr, rainbow_fade_cycle_time_args.end, argv[0]);
+		return 1;
+	}
+
+	int cycle_time_ms = *rainbow_fade_cycle_time_args.cycle_time_ms->ival;
+	if (cycle_time_ms <= 0) {
+		fprintf(stderr, "Cycle time must be >= 0\r\n");
+	}
+
+	rainbow_fade_set_cycle_time(cycle_time_ms);
+
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -200,6 +223,14 @@ esp_err_t shell_init(void) {
 			 uid,
 			 &uid_args);
 
+	rainbow_fade_cycle_time_args.cycle_time_ms = arg_int1(NULL, NULL, "<cycle time ms>", "Rainbow fade cycle time in milliseconds");
+	rainbow_fade_cycle_time_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("rainbow_fade_cycle_time",
+			 "Set rainbow fade cycle time",
+			 rainbow_fade_cycle_time,
+			 &rainbow_fade_cycle_time_args);
+
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);
 	if (err) {
@@ -208,4 +239,3 @@ esp_err_t shell_init(void) {
 
 	return esp_console_start_repl(repl);
 }
-

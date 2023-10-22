@@ -356,6 +356,7 @@ void app_main(void) {
 		}
 
 		bonk_update(&bonk);
+		rainbow_fade_update();
 
 		xSemaphoreTake(main_lock, portMAX_DELAY);
 		neighbour_housekeeping();
@@ -389,6 +390,9 @@ void app_main(void) {
 					break;
 				case WIRELESS_PACKET_TYPE_SQUISH:
 					squish_rx(&squish, &packet, neigh);
+					break;
+				case WIRELESS_PACKET_TYPE_RAINBOW_FADE:
+					rainbow_fade_rx(&packet);
 					break;
 				default:
 					ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
