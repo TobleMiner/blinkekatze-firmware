@@ -94,11 +94,17 @@ static int parse_mac_address(const char *str, uint8_t *address) {
 }
 
 static int parse_on_off(const char *str, bool *on) {
-	if (!strcasecmp(str, "on") || !strcasecmp(str, "1")) {
+	if (!strcasecmp(str, "on") ||
+	    !strcasecmp(str, "true") ||
+	    !strcasecmp(str, "enable") ||
+	    !strcasecmp(str, "1")) {
 		*on = true;
 		return 0;
 	}
-	if (!strcasecmp(str, "off") || !strcasecmp(str, "0")) {
+	if (!strcasecmp(str, "off") ||
+	    !strcasecmp(str, "false") ||
+	    !strcasecmp(str, "disable") ||
+	    !strcasecmp(str, "0")) {
 		*on = false;
 		return 0;
 	}
@@ -133,6 +139,31 @@ static int uid(int argc, char **argv) {
 	uid_enable(address, enable);
 	uid_enable(address, enable);
 	uid_enable(address, enable);
+
+	return 0;
+}
+
+static struct {
+	struct arg_str *enable;
+	struct arg_end *end;
+} rainbow_fade_args;
+
+static int rainbow_fade(int argc, char **argv) {
+	rainbow_fade_args.enable->sval[0] = "";
+	int errors = arg_parse(argc, argv, (void **)&rainbow_fade_args);
+	if (errors) {
+		arg_print_errors(stderr, rainbow_fade_args.end, argv[0]);
+		return 1;
+	}
+
+	bool enable;
+	int err = parse_on_off(rainbow_fade_args.enable->sval[0], &enable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", rainbow_fade_args.enable->sval[0]);
+		return 1;
+	}
+
+	rainbow_fade_set_enable(enable);
 
 	return 0;
 }
@@ -215,13 +246,21 @@ esp_err_t shell_init(void) {
 		    reboot);
 
 	uid_args.address = arg_str1(NULL, NULL, "<address>", "Address of target node");
-	uid_args.enable = arg_str1(NULL, NULL, "<on/off>", "Switch uid light on or off");
+	uid_args.enable = arg_str1(NULL, NULL, "<on|off>", "Switch uid light on or off");
 	uid_args.end = arg_end(2);
 
 	ADD_COMMAND_ARGS("uid",
 			 "Identify device",
 			 uid,
 			 &uid_args);
+
+	rainbow_fade_args.enable = arg_str1(NULL, NULL, "<on|off>", "Disable/enable rainbow fade");
+	rainbow_fade_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("rainbow_fade",
+			 "Enable or disable rainbow fade",
+			 rainbow_fade,
+			 &rainbow_fade_args);
 
 	rainbow_fade_cycle_time_args.cycle_time_ms = arg_int1(NULL, NULL, "<cycle time ms>", "Rainbow fade cycle time in milliseconds");
 	rainbow_fade_cycle_time_args.end = arg_end(1);
