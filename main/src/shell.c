@@ -46,8 +46,60 @@ static int list_neighbours(int argc, char **argv) {
 	return 0;
 }
 
+static int parse_mac_address(const char *str, uint8_t *address) {
+	int num_bytes_out = 0;
+	while (*str && num_bytes_out < ESP_NOW_ETH_ALEN) {
+		if (*str == ':') {
+			str++;
+			continue;
+		}
+
+		if (!str[1]) {
+			return -EINVAL;
+		}
+
+		address[num_bytes_out++] = hex_to_byte(str);
+		str += 2;
+	}
+
+	return num_bytes_out == ESP_NOW_ETH_ALEN ? 0 : -EINVAL;
+}
+
+static struct {
+	struct arg_str *address;
+	struct arg_end *end;
+} node_info_args;
+
 static int node_info(int argc, char **argv) {
-	node_info_print_local();
+	node_info_args.address->sval[0] = "";
+
+	int errors = arg_parse(argc, argv, (void **)&node_info_args);
+	if (errors) {
+		arg_print_errors(stderr, node_info_args.end, argv[0]);
+		return 1;
+	}
+
+	if (node_info_args.address->sval[0] && strlen(node_info_args.address->sval[0])) {
+		uint8_t address[ESP_NOW_ETH_ALEN];
+		int err = parse_mac_address(node_info_args.address->sval[0], address);
+		if (err) {
+			fprintf(stderr, "'%s' is not a valid node address\r\n", node_info_args.address->sval[0]);
+			return 1;
+		}
+
+		main_loop_lock();
+		const neighbour_t *neigh = neighbour_find_by_address(address);
+		if (neigh) {
+			node_info_print_remote(neigh);
+		} else {
+			fprintf(stderr, "No neighbour with address '%s' found\r\n", node_info_args.address->sval[0]);
+		}
+		main_loop_unlock();
+	} else {
+		main_loop_lock();
+		node_info_print_local();
+		main_loop_unlock();
+	}
 	return 0;
 }
 
@@ -73,25 +125,6 @@ static struct {
 	struct arg_str *enable;
 	struct arg_end *end;
 } uid_args;
-
-static int parse_mac_address(const char *str, uint8_t *address) {
-	int num_bytes_out = 0;
-	while (*str && num_bytes_out < ESP_NOW_ETH_ALEN) {
-		if (*str == ':') {
-			str++;
-			continue;
-		}
-
-		if (!str[1]) {
-			return -EINVAL;
-		}
-
-		address[num_bytes_out++] = hex_to_byte(str);
-		str += 2;
-	}
-
-	return num_bytes_out == ESP_NOW_ETH_ALEN ? 0 : -EINVAL;
-}
 
 static int parse_on_off(const char *str, bool *on) {
 	if (!strcasecmp(str, "on") ||
@@ -230,9 +263,13 @@ esp_err_t shell_init(void) {
 		    "Stop serving own firmware via OTA",
 		    stop_serving_ota);
 
-	ADD_COMMAND("node_info",
-		    "Show information about local node",
-		    node_info);
+	node_info_args.address = arg_str0(NULL, NULL, "[address]", "Address of target node. Local node if omitted");
+	node_info_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("node_info",
+    			 "Show information about local node",
+    			 node_info,
+			 &node_info_args);
 
 	ADD_COMMAND("ota_status",
 		    "Show OTA update status",
