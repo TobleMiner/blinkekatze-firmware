@@ -139,69 +139,70 @@ static void apply_color_correction(const rgb16_t *in, rgb16_t *out) {
 
 static void apply_color_correction_per_channel(const rgb16_t *in, rgb16_t *out) {
 	rgb16_t color_min_lookup = { in->r / LOOKUP_DIV, in->g / LOOKUP_DIV, in->b / LOOKUP_DIV };
-	rgb16_t color_max_lookup_r = {
-		MIN(DIV_ROUND_UP(in->r, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
-		color_min_lookup.g,
-		color_min_lookup.b
+	rgb16_t color_ref_lookup = {
+		MIN(in->r / LOOKUP_DIV + DIV_ROUND(in->r % LOOKUP_DIV, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
+		MIN(in->g / LOOKUP_DIV + DIV_ROUND(in->g % LOOKUP_DIV, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
+		MIN(in->b / LOOKUP_DIV + DIV_ROUND(in->b % LOOKUP_DIV, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
 	};
-	rgb16_t color_max_lookup_g = {
-		color_min_lookup.r,
-		MIN(DIV_ROUND_UP(in->g, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
-		color_min_lookup.b
+	rgb16_t color_lookup_r = {
+		MIN(MAX((int)color_ref_lookup.r + (color_ref_lookup.r == color_min_lookup.r ? 1 : -1), 0), COLOR_TABLE_SIZE - 1),
+		color_ref_lookup.g,
+		color_ref_lookup.b
 	};
-	rgb16_t color_max_lookup_b = {
-		color_min_lookup.r,
-		color_min_lookup.g,
-		MIN(DIV_ROUND_UP(in->b, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
+	rgb16_t color_lookup_g = {
+		color_ref_lookup.r,
+		MIN(MAX((int)color_ref_lookup.g + (color_ref_lookup.g == color_min_lookup.g ? 1 : -1), 0), COLOR_TABLE_SIZE - 1),
+		color_ref_lookup.b
 	};
-	rgb16_t color_min = {
-		color_min_lookup.r * LOOKUP_DIV,
-		color_min_lookup.g * LOOKUP_DIV,
-		color_min_lookup.b * LOOKUP_DIV
+	rgb16_t color_lookup_b = {
+		color_ref_lookup.r,
+		color_ref_lookup.g,
+		MIN(MAX((int)color_ref_lookup.b + (color_ref_lookup.b == color_min_lookup.b ? 1 : -1), 0), COLOR_TABLE_SIZE - 1)
+	};
+	rgb16_t color_ref = {
+		color_ref_lookup.r * LOOKUP_DIV,
+		color_ref_lookup.g * LOOKUP_DIV,
+		color_ref_lookup.b * LOOKUP_DIV
 	};
 	rgb16_t color_max = {
-		color_max_lookup_r.r * LOOKUP_DIV,
-		color_max_lookup_g.g * LOOKUP_DIV,
-		color_max_lookup_b.b * LOOKUP_DIV
+		color_lookup_r.r * LOOKUP_DIV,
+		color_lookup_g.g * LOOKUP_DIV,
+		color_lookup_b.b * LOOKUP_DIV
 	};
-	rgb16_t color_corrected_min;
-	rgb16_t color_corrected_max_r;
-	rgb16_t color_corrected_max_g;
-	rgb16_t color_corrected_max_b;
-	lookup_color(&color_min_lookup, &color_corrected_min);
-	lookup_color(&color_max_lookup_r, &color_corrected_max_r);
-	lookup_color(&color_max_lookup_g, &color_corrected_max_g);
-	lookup_color(&color_max_lookup_b, &color_corrected_max_b);
+	rgb16_t color_corrected_ref;
+	rgb16_t color_corrected_r;
+	rgb16_t color_corrected_g;
+	rgb16_t color_corrected_b;
+	lookup_color(&color_ref_lookup, &color_corrected_ref);
+	lookup_color(&color_lookup_r, &color_corrected_r);
+	lookup_color(&color_lookup_g, &color_corrected_g);
+	lookup_color(&color_lookup_b, &color_corrected_b);
 
-	int32_t delta_in_r = in->r - color_min.r;
-	int32_t delta_in_g = in->g - color_min.g;
-	int32_t delta_in_b = in->b - color_min.b;
-	int32_t delta_min_max_r = color_max.r - color_min.r;
-	int32_t delta_min_max_g = color_max.g - color_min.g;
-	int32_t delta_min_max_b = color_max.b - color_min.b;
-	rgb16_t color_out = color_corrected_min;
+	int32_t delta_in_r = (int32_t)in->r - (int32_t)color_ref.r;
+	int32_t delta_in_g = (int32_t)in->g - (int32_t)color_ref.g;
+	int32_t delta_in_b = (int32_t)in->b - (int32_t)color_ref.b;
+	int32_t delta_ref_r = (int32_t)color_max.r - (int32_t)color_ref.r;
+	int32_t delta_ref_g = (int32_t)color_max.g - (int32_t)color_ref.g;
+	int32_t delta_ref_b = (int32_t)color_max.b - (int32_t)color_ref.b;
+	rgb16_t color_out = color_corrected_ref;
 
-	if (delta_min_max_r) {
-		color_out.r += DIV_ROUND(((int32_t)color_corrected_max_r.r - (int32_t)color_corrected_min.r) * delta_in_r, delta_min_max_r);
-		color_out.g += DIV_ROUND(((int32_t)color_corrected_max_r.g - (int32_t)color_corrected_min.g) * delta_in_r, delta_min_max_r);
-		color_out.b += DIV_ROUND(((int32_t)color_corrected_max_r.b - (int32_t)color_corrected_min.b) * delta_in_r, delta_min_max_r);
+	if (delta_ref_r) {
+		color_out.r += DIV_ROUND(((int32_t)color_corrected_r.r - (int32_t)color_corrected_ref.r) * delta_in_r, delta_ref_r);
+		color_out.g += DIV_ROUND(((int32_t)color_corrected_r.g - (int32_t)color_corrected_ref.g) * delta_in_r, delta_ref_r);
+		color_out.b += DIV_ROUND(((int32_t)color_corrected_r.b - (int32_t)color_corrected_ref.b) * delta_in_r, delta_ref_r);
 	}
-	if (delta_min_max_g) {
-		color_out.r += DIV_ROUND(((int32_t)color_corrected_max_g.r - (int32_t)color_corrected_min.r) * delta_in_g, delta_min_max_g);
-		color_out.g += DIV_ROUND(((int32_t)color_corrected_max_g.g - (int32_t)color_corrected_min.g) * delta_in_g, delta_min_max_g);
-		color_out.b += DIV_ROUND(((int32_t)color_corrected_max_g.b - (int32_t)color_corrected_min.b) * delta_in_g, delta_min_max_g);
+	if (delta_ref_g) {
+		color_out.r += DIV_ROUND(((int32_t)color_corrected_g.r - (int32_t)color_corrected_ref.r) * delta_in_g, delta_ref_g);
+		color_out.g += DIV_ROUND(((int32_t)color_corrected_g.g - (int32_t)color_corrected_ref.g) * delta_in_g, delta_ref_g);
+		color_out.b += DIV_ROUND(((int32_t)color_corrected_g.b - (int32_t)color_corrected_ref.b) * delta_in_g, delta_ref_g);
 	}
-	if (delta_min_max_b) {
-		color_out.r += DIV_ROUND(((int32_t)color_corrected_max_b.r - (int32_t)color_corrected_min.r) * delta_in_b, delta_min_max_b);
-		color_out.g += DIV_ROUND(((int32_t)color_corrected_max_b.g - (int32_t)color_corrected_min.g) * delta_in_b, delta_min_max_b);
-		color_out.b += DIV_ROUND(((int32_t)color_corrected_max_b.b - (int32_t)color_corrected_min.b) * delta_in_b, delta_min_max_b);
+	if (delta_ref_b) {
+		color_out.r += DIV_ROUND(((int32_t)color_corrected_b.r - (int32_t)color_corrected_ref.r) * delta_in_b, delta_ref_b);
+		color_out.g += DIV_ROUND(((int32_t)color_corrected_b.g - (int32_t)color_corrected_ref.g) * delta_in_b, delta_ref_b);
+		color_out.b += DIV_ROUND(((int32_t)color_corrected_b.b - (int32_t)color_corrected_ref.b) * delta_in_b, delta_ref_b);
 	}
 
 	*out = color_out;
-
-	printf("%5u, %5u, %5u, %4u, %4u, %4u\r\n",
-	       in->r, in->g, in->b,
-	       color_out.r, color_out.g, color_out.b);
 }
 
 #define GLOBAL_BRIGHT(comp) ((comp) > NUM_LEDS ? (comp) >> 4 : 0)
