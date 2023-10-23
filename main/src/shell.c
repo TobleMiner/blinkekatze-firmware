@@ -183,6 +183,7 @@ static int rainbow_fade_cycle_time(int argc, char **argv) {
 	int cycle_time_ms = *rainbow_fade_cycle_time_args.cycle_time_ms->ival;
 	if (cycle_time_ms <= 0) {
 		fprintf(stderr, "Cycle time must be >= 0\r\n");
+		return 1;
 	}
 
 	rainbow_fade_set_cycle_time(cycle_time_ms);
