@@ -15,7 +15,7 @@
 #define SQUISH_RECOVERY_INTERVAL_MS	3000
 #define SQUISH_MAX_TX_INTERVAL_MS	33
 #define PRESSURE_ADJUST_PER_SECOND	1
-#define SQUISH_MIN_CHANGE_TX_PERCENT	1
+#define SQUISH_MIN_CHANGE_TX_MILLI	2
 
 typedef struct squish_packet {
 	uint8_t packet_type;
@@ -121,7 +121,7 @@ esp_err_t squish_update(squish_t *squish) {
 		if (delta > 0) {
 			uint32_t additional_squish = delta * SQUISH_FACTOR * (delta_us / 1000) / 8192;
 			squish->local_squishedness = MIN(squish->local_squishedness + additional_squish, MAX_SQUISHEDNESS);
-			if (additional_squish >= MAX_SQUISHEDNESS * SQUISH_MIN_CHANGE_TX_PERCENT / 100) {
+			if (additional_squish >= DIV_ROUND(MAX_SQUISHEDNESS * SQUISH_MIN_CHANGE_TX_MILLI, 1000)) {
 				squish_tx_peak(squish);
 			}
 		}
