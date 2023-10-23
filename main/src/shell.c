@@ -263,7 +263,7 @@ esp_err_t shell_init(void) {
 		    "Stop serving own firmware via OTA",
 		    stop_serving_ota);
 
-	node_info_args.address = arg_str0(NULL, NULL, "[address]", "Address of target node. Local node if omitted");
+	node_info_args.address = arg_str0(NULL, NULL, "address", "Address of target node. Local node if omitted");
 	node_info_args.end = arg_end(1);
 
 	ADD_COMMAND_ARGS("node_info",
@@ -283,8 +283,8 @@ esp_err_t shell_init(void) {
 		    "Reboot local node",
 		    reboot);
 
-	uid_args.address = arg_str1(NULL, NULL, "<address>", "Address of target node");
-	uid_args.enable = arg_str1(NULL, NULL, "<on|off>", "Switch uid light on or off");
+	uid_args.address = arg_str1(NULL, NULL, "address", "Address of target node");
+	uid_args.enable = arg_str1(NULL, NULL, "on|off", "Switch uid light on or off");
 	uid_args.end = arg_end(2);
 
 	ADD_COMMAND_ARGS("uid",
@@ -292,7 +292,7 @@ esp_err_t shell_init(void) {
 			 uid,
 			 &uid_args);
 
-	rainbow_fade_args.enable = arg_str1(NULL, NULL, "<on|off>", "Disable/enable rainbow fade");
+	rainbow_fade_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable rainbow fade");
 	rainbow_fade_args.end = arg_end(1);
 
 	ADD_COMMAND_ARGS("rainbow_fade",
@@ -300,7 +300,7 @@ esp_err_t shell_init(void) {
 			 rainbow_fade,
 			 &rainbow_fade_args);
 
-	rainbow_fade_cycle_time_args.cycle_time_ms = arg_int1(NULL, NULL, "<cycle time ms>", "Rainbow fade cycle time in milliseconds");
+	rainbow_fade_cycle_time_args.cycle_time_ms = arg_int1(NULL, NULL, "cycle time ms", "Rainbow fade cycle time in milliseconds");
 	rainbow_fade_cycle_time_args.end = arg_end(1);
 
 	ADD_COMMAND_ARGS("rainbow_fade_cycle_time",
