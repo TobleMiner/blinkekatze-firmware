@@ -94,49 +94,6 @@ static void lookup_color(const rgb16_t *in, rgb16_t *out) {
 	*out = colorcal_table[idx];
 }
 
-static void apply_color_correction(const rgb16_t *in, rgb16_t *out) {
-	rgb16_t color_min_lookup = { in->r / LOOKUP_DIV, in->g / LOOKUP_DIV, in->b / LOOKUP_DIV };
-	rgb16_t color_max_lookup = {
-		MIN(DIV_ROUND_UP(in->r, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
-		MIN(DIV_ROUND_UP(in->g, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
-		MIN(DIV_ROUND_UP(in->b, LOOKUP_DIV), COLOR_TABLE_SIZE - 1)
-	};
-	rgb16_t color_min = {
-		color_min_lookup.r * LOOKUP_DIV,
-		color_min_lookup.g * LOOKUP_DIV,
-		color_min_lookup.b * LOOKUP_DIV
-	};
-	rgb16_t color_max = {
-		color_max_lookup.r * LOOKUP_DIV,
-		color_max_lookup.g * LOOKUP_DIV,
-		color_max_lookup.b * LOOKUP_DIV
-	};
-	rgb16_t color_corrected_min;
-	rgb16_t color_corrected_max;
-	lookup_color(&color_min_lookup, &color_corrected_min);
-	lookup_color(&color_max_lookup, &color_corrected_max);
-
-	int32_t delta_in_r = in->r - color_min.r;
-	int32_t delta_in_g = in->g - color_min.g;
-	int32_t delta_in_b = in->b - color_min.b;
-	int32_t delta_min_max_r = color_max.r - color_min.r;
-	int32_t delta_min_max_g = color_max.g - color_min.g;
-	int32_t delta_min_max_b = color_max.b - color_min.b;
-	rgb16_t color_out = color_corrected_min;
-
-	if (delta_min_max_r) {
-		color_out.r += DIV_ROUND(((int32_t)color_corrected_max.r - (int32_t)color_corrected_min.r) * delta_in_r, delta_min_max_r);
-	}
-	if (delta_min_max_g) {
-		color_out.g += DIV_ROUND(((int32_t)color_corrected_max.g - (int32_t)color_corrected_min.g) * delta_in_g, delta_min_max_g);
-	}
-	if (delta_min_max_b) {
-		color_out.b += DIV_ROUND(((int32_t)color_corrected_max.b - (int32_t)color_corrected_min.b) * delta_in_b, delta_min_max_b);
-	}
-
-	*out = color_out;
-}
-
 static void apply_color_correction_per_channel(const rgb16_t *in, rgb16_t *out) {
 	rgb16_t color_min_lookup = { in->r / LOOKUP_DIV, in->g / LOOKUP_DIV, in->b / LOOKUP_DIV };
 	rgb16_t color_ref_lookup = {
@@ -211,7 +168,6 @@ static void apply_color_correction_per_channel(const rgb16_t *in, rgb16_t *out) 
 static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
 	rgb16_t color_in = { r, g, b };
 	rgb16_t color_out;
-//	apply_color_correction(&color_in, &color_out);
 	apply_color_correction_per_channel(&color_in, &color_out);
 //	int led_map[NUM_LEDS] = { 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15 };
 	int led_map[NUM_LEDS] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
