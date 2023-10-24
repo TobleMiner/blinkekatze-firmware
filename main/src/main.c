@@ -422,12 +422,10 @@ void app_main(void) {
 		uid_apply(&hsv);
 
 		uint16_t r, g, b;
-//		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
 		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
 		rgb16_t color_rgb = { r, g, b};
 		color_override_apply(&color_rgb);
 		leds_set_color(led_data + BYTES_RESET, color_rgb.r, color_rgb.g, color_rgb.b);
-//		leds_set_color(led_data + BYTES_RESET, (uint16_t)red_g, (uint16_t)green_g, (uint16_t)blue_g);
 
 		xfer.length = dma_buf_len * 8;
 		xfer.rxlength = 0;
