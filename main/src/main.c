@@ -23,6 +23,7 @@
 #include "bonk.h"
 #include "bq24295.h"
 #include "bq27546.h"
+#include "color_override.h"
 #include "embedded_files.h"
 #include "fast_hsv2rgb.h"
 #include "i2c_bus.h"
@@ -76,12 +77,6 @@ static uint8_t *led_set_color(uint8_t *data, uint8_t r, uint8_t g, uint8_t b) {
 	data = led_set_color_component(data, b);
 	return data;
 }
-
-typedef struct rgb16 {
-	uint16_t r;
-	uint16_t g;
-	uint16_t b;
-} __attribute__((packed)) rgb16_t;
 
 static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_12bit_bin);
 //static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_32x32x32_12bit_bin);
@@ -203,43 +198,6 @@ static void IRAM_ATTR led_iomux_disable(spi_transaction_t *trans) {
 //	PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
 }
 
-static int red_g = 0;
-static int green_g = 0;
-static int blue_g = 0;
-
-void hsv_input_loop(void *arg) {
-	char keybuf[32] = { 0 };
-	unsigned int bufpos = 0;
-	while (1) {
-		char c;
-		ssize_t ret = fread(&c, 1, 1, stdin);
-		if (ret > 0) {
-			if (c == '\x0a') {
-				keybuf[bufpos] = 0;
-				ESP_LOGI(TAG, "%s", keybuf);
-				char *first_sep = strchr(keybuf, ' ');
-				if (first_sep) {
-					*first_sep = 0;
-					char *second_sep = strchr(first_sep + 1, ' ');
-					if (second_sep) {
-						*second_sep = 0;
-						red_g = atoi(keybuf);
-						green_g = atoi(first_sep + 1);
-						blue_g = atoi(second_sep + 1);
-					}
-				}
-				bufpos = 0;
-			}
-			if (c == '\x20' || (c >= '0' && c <= '9')) {
-				if (bufpos < sizeof(keybuf) - 1) {
-					keybuf[bufpos++] = c;
-				}
-			}
-		}
-		vTaskDelay(1);
-	}
-}
-
 static SemaphoreHandle_t main_lock;
 static StaticSemaphore_t main_lock_buffer;
 
@@ -350,8 +308,6 @@ void app_main(void) {
 	spl06_t barometer;
 	ESP_ERROR_CHECK(spl06_init(&barometer, SPI2_HOST, 9));
 	squish_init(&squish, &barometer);
-
-//	ESP_ERROR_CHECK(xTaskCreate(hsv_input_loop, "hsv_input_loop", 4096, NULL, 10, NULL) != pdPASS);
 
 	status_leds_init();
 	status_led_set_strobe(STATUS_LED_RED, 20);
@@ -468,7 +424,9 @@ void app_main(void) {
 		uint16_t r, g, b;
 //		fast_hsv2rgb_32bit(hue_g, sat_g, val_g, &r, &g, &b);
 		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
-		leds_set_color(led_data + BYTES_RESET, r, g, b);
+		rgb16_t color_rgb = { r, g, b};
+		color_override_apply(&color_rgb);
+		leds_set_color(led_data + BYTES_RESET, color_rgb.r, color_rgb.g, color_rgb.b);
 //		leds_set_color(led_data + BYTES_RESET, (uint16_t)red_g, (uint16_t)green_g, (uint16_t)blue_g);
 
 		xfer.length = dma_buf_len * 8;

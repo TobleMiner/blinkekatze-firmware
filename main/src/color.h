@@ -17,3 +17,9 @@ typedef struct color_hsv {
 	uint16_t s;
 	uint16_t v;
 } color_hsv_t;
+
+typedef struct rgb16 {
+	uint16_t r;
+	uint16_t g;
+	uint16_t b;
+} __attribute__((packed)) rgb16_t;

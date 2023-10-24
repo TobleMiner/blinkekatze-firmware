@@ -8,6 +8,7 @@
 #include <esp_system.h>
 #include <argtable3/argtable3.h>
 
+#include "color_override.h"
 #include "neighbour.h"
 #include "node_info.h"
 #include "ota.h"
@@ -224,6 +225,69 @@ static int rainbow_fade_cycle_time(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_str *enable;
+	struct arg_end *end;
+} color_override_args;
+
+static int color_override(int argc, char **argv) {
+	color_override_args.enable->sval[0] = "";
+	int errors = arg_parse(argc, argv, (void **)&color_override_args);
+	if (errors) {
+		arg_print_errors(stderr, color_override_args.end, argv[0]);
+		return 1;
+	}
+
+	bool enable;
+	int err = parse_on_off(color_override_args.enable->sval[0], &enable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", color_override_args.enable->sval[0]);
+		return 1;
+	}
+
+	color_override_set_enable(enable);
+
+	return 0;
+}
+
+static struct {
+	struct arg_int *r;
+	struct arg_int *g;
+	struct arg_int *b;
+	struct arg_end *end;
+} color_override_color_args;
+
+static int color_override_color(int argc, char **argv) {
+	int errors = arg_parse(argc, argv, (void **)&color_override_color_args);
+	if (errors) {
+		arg_print_errors(stderr, color_override_color_args.end, argv[0]);
+		return 1;
+	}
+
+	int r = *color_override_color_args.r->ival;
+	if (r < 0 || r > 65535) {
+		fprintf(stderr, "Red portion must be 0 - 65535\r\n");
+		return 1;
+	}
+
+	int g = *color_override_color_args.g->ival;
+	if (g < 0 || g > 65535) {
+		fprintf(stderr, "Green portion must be 0 - 65535\r\n");
+		return 1;
+	}
+
+	int b = *color_override_color_args.b->ival;
+	if (b < 0 || b > 65535) {
+		fprintf(stderr, "Blue portion must be 0 - 65535\r\n");
+		return 1;
+	}
+
+	rgb16_t color = { r, g, b};
+	color_override_set_color(&color);
+
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -307,6 +371,24 @@ esp_err_t shell_init(void) {
 			 "Set rainbow fade cycle time",
 			 rainbow_fade_cycle_time,
 			 &rainbow_fade_cycle_time_args);
+
+	color_override_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable local color override");
+	color_override_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("color_override",
+			 "Enable or disable local color override",
+			 color_override,
+			 &color_override_args);
+
+	color_override_color_args.r = arg_int1(NULL, NULL, "r", "Red color portion, 0 - 65535");
+	color_override_color_args.g = arg_int1(NULL, NULL, "g", "Green color portion, 0 - 65535");
+	color_override_color_args.b = arg_int1(NULL, NULL, "b", "Blue color portion, 0 - 65535");
+	color_override_color_args.end = arg_end(3);
+
+	ADD_COMMAND_ARGS("color_override_color",
+			 "Set color override color",
+			 color_override_color,
+			 &color_override_color_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);
