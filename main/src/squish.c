@@ -26,10 +26,10 @@ typedef struct squish_packet {
 static const char *TAG = "squish";
 
 static const neighbour_rssi_delay_model_t squish_delay_model = {
-	-20,
-	-90,
 	10000,
-	0
+	0,
+	-20,
+	-90
 };
 
 void squish_init(squish_t *squish, spl06_t *baro) {
