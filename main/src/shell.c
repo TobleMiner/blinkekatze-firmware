@@ -203,6 +203,69 @@ static int rainbow_fade(int argc, char **argv) {
 }
 
 static struct {
+	struct arg_str *enable;
+	struct arg_end *end;
+} rainbow_fade_rssi_delay_args;
+
+static int rainbow_fade_rssi_delay(int argc, char **argv) {
+	rainbow_fade_rssi_delay_args.enable->sval[0] = "";
+	int errors = arg_parse(argc, argv, (void **)&rainbow_fade_rssi_delay_args);
+	if (errors) {
+		arg_print_errors(stderr, rainbow_fade_rssi_delay_args.end, argv[0]);
+		return 1;
+	}
+
+	bool enable;
+	int err = parse_on_off(rainbow_fade_rssi_delay_args.enable->sval[0], &enable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", rainbow_fade_rssi_delay_args.enable->sval[0]);
+		return 1;
+	}
+
+	rainbow_fade_set_phase_shift_enable(enable);
+
+	return 0;
+}
+
+static struct {
+	struct arg_int *threshold;
+	struct arg_int *limit;
+	struct arg_int *delay;
+	struct arg_int *delay_limit;
+	struct arg_end *end;
+} rainbow_fade_rssi_delay_model_args;
+
+static int rainbow_fade_rssi_delay_model(int argc, char **argv) {
+	int errors = arg_parse(argc, argv, (void **)&rainbow_fade_rssi_delay_model_args);
+	if (errors) {
+		arg_print_errors(stderr, rainbow_fade_rssi_delay_model_args.end, argv[0]);
+		return 1;
+	}
+
+	int threshold = *rainbow_fade_rssi_delay_model_args.threshold->ival;
+	if (threshold < -128 || threshold > 127) {
+		fprintf(stderr, "RSSI threshold must be -128 - 127\r\n");
+		return 1;
+	}
+
+	int limit = *rainbow_fade_rssi_delay_model_args.limit->ival;
+	if (limit < -128 || limit > 127) {
+		fprintf(stderr, "RSSI limit must be -128 - 127\r\n");
+		return 1;
+	}
+
+	int delay = *rainbow_fade_rssi_delay_model_args.delay->ival;
+	int delay_limit = *rainbow_fade_rssi_delay_model_args.delay_limit->ival;
+	neighbour_rssi_delay_model_t delay_model = {
+		delay, delay_limit,
+		threshold, limit
+	};
+	rainbow_fade_set_rssi_delay_model(&delay_model);
+
+	return 0;
+}
+
+static struct {
 	struct arg_int *cycle_time_ms;
 	struct arg_end *end;
 } rainbow_fade_cycle_time_args;
@@ -363,6 +426,25 @@ esp_err_t shell_init(void) {
 			 "Enable or disable rainbow fade",
 			 rainbow_fade,
 			 &rainbow_fade_args);
+
+	rainbow_fade_rssi_delay_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable rainbow fade phase shift based on RSSI");
+	rainbow_fade_rssi_delay_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("rainbow_fade_rssi_delay",
+			 "Enable or disable rainbow fade phase shift based on RSSI",
+			 rainbow_fade_rssi_delay,
+			 &rainbow_fade_rssi_delay_args);
+
+	rainbow_fade_rssi_delay_model_args.threshold = arg_int1(NULL, NULL, "min rssi", "RSSI to start delaying cycle animation at");
+	rainbow_fade_rssi_delay_model_args.limit = arg_int1(NULL, NULL, "max rssi", "RSSI to limit delay calculation to");
+	rainbow_fade_rssi_delay_model_args.delay = arg_int1(NULL, NULL, "us", "Delay in us per RSSI step");
+	rainbow_fade_rssi_delay_model_args.delay_limit = arg_int1(NULL, NULL, "us", "Maximum delay in us (set to 0 to disable)");
+	rainbow_fade_rssi_delay_model_args.end = arg_end(4);
+
+	ADD_COMMAND_ARGS("rainbow_fade_rssi_delay_model",
+			 "Configure model used to calculate rainbow fade phase shift",
+			 rainbow_fade_rssi_delay_model,
+			 &rainbow_fade_rssi_delay_model_args);
 
 	rainbow_fade_cycle_time_args.cycle_time_ms = arg_int1(NULL, NULL, "cycle time ms", "Rainbow fade cycle time in milliseconds");
 	rainbow_fade_cycle_time_args.end = arg_end(1);
