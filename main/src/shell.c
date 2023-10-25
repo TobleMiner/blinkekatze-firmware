@@ -229,11 +229,35 @@ static int rainbow_fade_rssi_delay(int argc, char **argv) {
 	return 0;
 }
 
-static struct {
+typedef struct rssi_delay_model_args {
 	struct arg_int *threshold;
 	struct arg_int *limit;
 	struct arg_int *delay;
 	struct arg_int *delay_limit;
+} rssi_delay_model_args_t;
+
+static int handle_rssi_delay_model_args(const rssi_delay_model_args_t *args, neighbour_rssi_delay_model_t *model) {
+	int threshold = *args->threshold->ival;
+	if (threshold < -128 || threshold > 127) {
+		fprintf(stderr, "RSSI threshold must be -128 - 127\r\n");
+		return 1;
+	}
+
+	int limit = *args->limit->ival;
+	if (limit < -128 || limit > 127) {
+		fprintf(stderr, "RSSI limit must be -128 - 127\r\n");
+		return 1;
+	}
+
+	model->us_delay_per_rssi_step = *args->delay->ival;
+	model->delay_limit_us = *args->delay_limit->ival;
+	model->delay_rssi_threshold = threshold;
+	model->delay_rssi_limit = limit;
+	return 0;
+}
+
+static struct {
+	rssi_delay_model_args_t delay_model_args;
 	struct arg_end *end;
 } rainbow_fade_rssi_delay_model_args;
 
@@ -244,24 +268,12 @@ static int rainbow_fade_rssi_delay_model(int argc, char **argv) {
 		return 1;
 	}
 
-	int threshold = *rainbow_fade_rssi_delay_model_args.threshold->ival;
-	if (threshold < -128 || threshold > 127) {
-		fprintf(stderr, "RSSI threshold must be -128 - 127\r\n");
-		return 1;
+	neighbour_rssi_delay_model_t delay_model;
+	int err = handle_rssi_delay_model_args(&rainbow_fade_rssi_delay_model_args.delay_model_args, &delay_model);
+	if (err) {
+		return err;
 	}
 
-	int limit = *rainbow_fade_rssi_delay_model_args.limit->ival;
-	if (limit < -128 || limit > 127) {
-		fprintf(stderr, "RSSI limit must be -128 - 127\r\n");
-		return 1;
-	}
-
-	int delay = *rainbow_fade_rssi_delay_model_args.delay->ival;
-	int delay_limit = *rainbow_fade_rssi_delay_model_args.delay_limit->ival;
-	neighbour_rssi_delay_model_t delay_model = {
-		delay, delay_limit,
-		threshold, limit
-	};
 	rainbow_fade_set_rssi_delay_model(&delay_model);
 
 	return 0;
@@ -421,6 +433,13 @@ static int bonk_duration(int argc, char **argv) {
 	}						\
 } while (0)
 
+static void delay_model_args_init(rssi_delay_model_args_t *args) {
+	args->threshold = arg_int1(NULL, NULL, "min rssi", "RSSI to start delaying at");
+	args->limit = arg_int1(NULL, NULL, "max rssi", "RSSI to limit delay calculation to");
+	args->delay = arg_int1(NULL, NULL, "us", "Delay in us per RSSI step");
+	args->delay_limit = arg_int1(NULL, NULL, "us", "Maximum delay in us (set to 0 to disable)");
+}
+
 esp_err_t shell_init(bonk_t *bonk_) {
 	the_bonk = bonk_;
 
@@ -487,10 +506,7 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 rainbow_fade_rssi_delay,
 			 &rainbow_fade_rssi_delay_args);
 
-	rainbow_fade_rssi_delay_model_args.threshold = arg_int1(NULL, NULL, "min rssi", "RSSI to start delaying cycle animation at");
-	rainbow_fade_rssi_delay_model_args.limit = arg_int1(NULL, NULL, "max rssi", "RSSI to limit delay calculation to");
-	rainbow_fade_rssi_delay_model_args.delay = arg_int1(NULL, NULL, "us", "Delay in us per RSSI step");
-	rainbow_fade_rssi_delay_model_args.delay_limit = arg_int1(NULL, NULL, "us", "Maximum delay in us (set to 0 to disable)");
+	delay_model_args_init(&rainbow_fade_rssi_delay_model_args.delay_model_args);
 	rainbow_fade_rssi_delay_model_args.end = arg_end(4);
 
 	ADD_COMMAND_ARGS("rainbow_fade_rssi_delay_model",
