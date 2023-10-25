@@ -413,6 +413,31 @@ static int bonk_duration(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_str *enable;
+	struct arg_end *end;
+} bonk_decay_args;
+
+static int bonk_decay(int argc, char **argv) {
+	bonk_decay_args.enable->sval[0] = "";
+	int errors = arg_parse(argc, argv, (void **)&bonk_decay_args);
+	if (errors) {
+		arg_print_errors(stderr, bonk_decay_args.end, argv[0]);
+		return 1;
+	}
+
+	bool enable;
+	int err = parse_on_off(bonk_decay_args.enable->sval[0], &enable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", bonk_decay_args.enable->sval[0]);
+		return 1;
+	}
+
+	bonk_set_decay_enable(the_bonk, enable);
+
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -555,6 +580,14 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 "Set rainbow fade cycle time",
 			 bonk_duration,
 			 &bonk_duration_args);
+
+	bonk_decay_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable bonk brightness decay");
+	bonk_decay_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("bonk_decay",
+			 "Enable or disable bonk brightness decay",
+			 bonk_decay,
+			 &bonk_decay_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);

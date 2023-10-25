@@ -138,8 +138,12 @@ static void update_magnitude(bonk_t *bonk) {
 	for (int i = 0; i < ARRAY_SIZE(bonk->bonks); i++) {
 		const bonk_event_t *buffered_bonk = &bonk->bonks[i];
 		int64_t bonk_age = now - buffered_bonk->timestamp_us;
-		if (bonk_age < MS_TO_US((int64_t)bonk->bonk_duration_ms)) {
-			uint32_t bonk_decay = (int64_t)BONK_MAX_INTENSITY_THRESHOLD * bonk_age / MS_TO_US((int64_t)bonk->bonk_duration_ms);
+		if (now >= buffered_bonk->timestamp_us &&
+		    bonk_age < MS_TO_US((int64_t)bonk->bonk_duration_ms)) {
+			uint32_t bonk_decay = 0;
+			if (bonk->enable_decay) {
+				bonk_decay = (int64_t)BONK_MAX_INTENSITY_THRESHOLD * bonk_age / MS_TO_US((int64_t)bonk->bonk_duration_ms);
+			}
 			if (bonk_decay < buffered_bonk->magnitude) {
 				uint32_t local_magnitude = buffered_bonk->magnitude - bonk_decay;
 				if (magnitude + local_magnitude <= BONK_MAX_INTENSITY_THRESHOLD) {
@@ -231,6 +235,13 @@ void bonk_apply(bonk_t *bonk, color_hsv_t *color) {
 void bonk_set_enable(bonk_t *bonk, bool enable) {
 	if (bonk->enable != enable) {
 		bonk->enable = enable;
+		config_changed(bonk);
+	}
+}
+
+void bonk_set_decay_enable(bonk_t *bonk, bool enable) {
+	if (bonk->enable_decay != enable) {
+		bonk->enable_decay = enable;
 		config_changed(bonk);
 	}
 }
