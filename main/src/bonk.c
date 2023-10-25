@@ -198,6 +198,7 @@ static void rx_config(bonk_t *bonk, const wireless_packet_t *packet, const bonk_
 		bonk->delay_model.delay_rssi_limit = bonk_packet->config.delay_model_rssi_limit;
 		bonk->delay_model.us_delay_per_rssi_step = bonk_packet->config.delay_model_us_delay_per_rssi_step;
 		bonk->delay_model.delay_limit_us = bonk_packet->config.delay_model_delay_limit_us;
+		bonk->config_timestamp_us = bonk_packet->config.config_timestamp_us;
 	}
 
 	if (bonk_packet->config.config_timestamp_us >= bonk->config_timestamp_us) {
