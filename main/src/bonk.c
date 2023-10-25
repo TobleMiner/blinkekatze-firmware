@@ -234,3 +234,10 @@ void bonk_set_enable(bonk_t *bonk, bool enable) {
 		config_changed(bonk);
 	}
 }
+
+void bonk_set_duration(bonk_t *bonk, unsigned int duration) {
+	if (bonk->bonk_duration_ms != duration) {
+		bonk->bonk_duration_ms = duration;
+		config_changed(bonk);
+	}
+}

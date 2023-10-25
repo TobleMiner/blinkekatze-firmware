@@ -378,6 +378,29 @@ static int bonk(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_int *bonk_duration_ms;
+	struct arg_end *end;
+} bonk_duration_args;
+
+static int bonk_duration(int argc, char **argv) {
+	int errors = arg_parse(argc, argv, (void **)&bonk_duration_args);
+	if (errors) {
+		arg_print_errors(stderr, bonk_duration_args.end, argv[0]);
+		return 1;
+	}
+
+	int bonk_duration_ms = *bonk_duration_args.bonk_duration_ms->ival;
+	if (bonk_duration_ms < 0 || bonk_duration_ms > 65535) {
+		fprintf(stderr, "Bonk duration must be 0ms - 65535ms\r\n");
+		return 1;
+	}
+
+	bonk_set_duration(the_bonk, bonk_duration_ms);
+
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -508,6 +531,14 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 "Enable or disable bonk",
 			 bonk,
 			 &bonk_args);
+
+	bonk_duration_args.bonk_duration_ms = arg_int1(NULL, NULL, "bonk duration ms", "Bonk duration in milliseconds");
+	bonk_duration_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("bonk_duration",
+			 "Set rainbow fade cycle time",
+			 bonk_duration,
+			 &bonk_duration_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);

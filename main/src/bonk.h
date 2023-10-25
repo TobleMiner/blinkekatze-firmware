@@ -39,3 +39,4 @@ void bonk_rx(bonk_t *bonk, const wireless_packet_t *packet, const neighbour_t *n
 unsigned int bonk_get_intensity(const bonk_t *bonk);
 void bonk_apply(bonk_t *bonk, color_hsv_t *color);
 void bonk_set_enable(bonk_t *bonk, bool enable);
+void bonk_set_duration(bonk_t *bonk, unsigned int duration);
