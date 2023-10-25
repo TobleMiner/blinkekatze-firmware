@@ -132,6 +132,7 @@ void rainbow_fade_rx(const wireless_packet_t *packet) {
 		rainbow_fade.delay_model.delay_rssi_limit = config_packet.delay_model_rssi_limit;
 		rainbow_fade.delay_model.us_delay_per_rssi_step = config_packet.delay_model_us_delay_per_rssi_step;
 		rainbow_fade.delay_model.delay_limit_us = config_packet.delay_model_delay_limit_us;
+		rainbow_fade.config_timestamp_us = config_packet.config_timestamp_us;
 	}
 
 	if (config_packet.config_timestamp_us >= rainbow_fade.config_timestamp_us) {
