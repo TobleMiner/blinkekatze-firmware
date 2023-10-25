@@ -202,6 +202,7 @@ static SemaphoreHandle_t main_lock;
 static StaticSemaphore_t main_lock_buffer;
 
 static squish_t squish;
+static bonk_t bonk;
 void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
@@ -302,7 +303,6 @@ void app_main(void) {
 	neighbour_init();
 
 	ESP_ERROR_CHECK(lis3dh_init(&accelerometer, &i2c_bus, 0x18));
-	bonk_t bonk;
 	bonk_init(&bonk, &accelerometer);
 
 	spl06_t barometer;
@@ -314,7 +314,7 @@ void app_main(void) {
 
 	ESP_ERROR_CHECK(ota_init());
 
-	shell_init();
+	shell_init(&bonk);
 
 	bool shutdown = false;
 	unsigned loop_interval_ms = 20;

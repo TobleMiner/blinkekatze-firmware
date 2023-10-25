@@ -6,19 +6,37 @@
 
 #include "color.h"
 #include "lis3dh.h"
+#include "neighbour_rssi_delay_model.h"
 #include "neighbour.h"
 #include "wireless.h"
 
+#define BONK_MAX_INTENSITY 1000
+#define BONK_NUM_EVENTS	   100
+
+typedef struct bonk_event {
+	int64_t timestamp_us;
+	uint32_t magnitude;
+} bonk_event_t;
+
 typedef struct bonk {
 	lis3dh_t *accel;
-	int64_t last_bonk_us;
-	uint32_t last_bonk_magnitude;
+	int64_t timestamp_last_update;
+	int64_t last_rx_timestamp_us;
+	int64_t last_tx_timestamp_us;
+	int64_t config_timestamp_us;
+	uint32_t magnitude;
+	bonk_event_t bonks[BONK_NUM_EVENTS];
+	unsigned int bonk_write_pos;
+	neighbour_rssi_delay_model_t delay_model;
+	uint16_t bonk_duration_ms;
+	bool enable;
+	bool enable_decay;
+	bool enable_delay;
 } bonk_t;
-
-#define BONK_MAX_INTENSITY 1000
 
 void bonk_init(bonk_t *bonk, lis3dh_t *accel);
 esp_err_t bonk_update(bonk_t *bonk);
 void bonk_rx(bonk_t *bonk, const wireless_packet_t *packet, const neighbour_t *neigh);
 unsigned int bonk_get_intensity(const bonk_t *bonk);
 void bonk_apply(bonk_t *bonk, color_hsv_t *color);
+void bonk_set_enable(bonk_t *bonk, bool enable);

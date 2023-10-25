@@ -21,6 +21,8 @@ static const char *TAG = "repl";
 void main_loop_lock(void);
 void main_loop_unlock(void);
 
+static bonk_t *the_bonk;
+
 static int serve_ota(int argc, char **argv) {
 	main_loop_lock();
 	esp_err_t err = ota_serve_update(true);
@@ -351,6 +353,31 @@ static int color_override_color(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_str *enable;
+	struct arg_end *end;
+} bonk_args;
+
+static int bonk(int argc, char **argv) {
+	bonk_args.enable->sval[0] = "";
+	int errors = arg_parse(argc, argv, (void **)&bonk_args);
+	if (errors) {
+		arg_print_errors(stderr, bonk_args.end, argv[0]);
+		return 1;
+	}
+
+	bool enable;
+	int err = parse_on_off(bonk_args.enable->sval[0], &enable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", bonk_args.enable->sval[0]);
+		return 1;
+	}
+
+	bonk_set_enable(the_bonk, enable);
+
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -371,7 +398,9 @@ static int color_override_color(int argc, char **argv) {
 	}						\
 } while (0)
 
-esp_err_t shell_init(void) {
+esp_err_t shell_init(bonk_t *bonk_) {
+	the_bonk = bonk_;
+
 	esp_console_repl_t *repl = NULL;
 	esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
 	repl_config.prompt = "blinkekatze >";
@@ -471,6 +500,14 @@ esp_err_t shell_init(void) {
 			 "Set color override color",
 			 color_override_color,
 			 &color_override_color_args);
+
+	bonk_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable bonk");
+	bonk_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("bonk",
+			 "Enable or disable bonk",
+			 bonk,
+			 &bonk_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);
