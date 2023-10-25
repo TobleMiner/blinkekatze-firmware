@@ -177,9 +177,8 @@ esp_err_t bonk_update(bonk_t *bonk) {
 	return ESP_OK;
 }
 
-static void rx_bonk(bonk_t *bonk, const bonk_packet_t *bonk_packet, const neighbour_t *neigh) {
-	int64_t now = esp_timer_get_time();
-	int64_t local_timestamp = now;
+static void rx_bonk(bonk_t *bonk, const wireless_packet_t *packet, const bonk_packet_t *bonk_packet, const neighbour_t *neigh) {
+	int64_t local_timestamp = packet->rx_timestamp;
 	if (neigh) {
 		local_timestamp = neighbour_remote_to_local_time(neigh, bonk_packet->bonk.timestamp_us);
 		if (bonk->enable_delay) {
@@ -216,7 +215,7 @@ void bonk_rx(bonk_t *bonk, const wireless_packet_t *packet, const neighbour_t *n
 	memcpy(&bonk_packet, packet->data, sizeof(bonk_packet_t));
 	switch (bonk_packet.bonk_packet_type) {
 	case BONK_PACKET_TYPE_BONK:
-		rx_bonk(bonk, &bonk_packet, neigh);
+		rx_bonk(bonk, packet, &bonk_packet, neigh);
 		break;
 	case BONK_PACKET_TYPE_CONFIG:
 		rx_config(bonk, packet, &bonk_packet);
