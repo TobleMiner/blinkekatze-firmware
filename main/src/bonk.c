@@ -73,7 +73,7 @@ static void bonk_tx_bonk(int64_t timestamp, uint32_t magnitude) {
 static void process_bonk(bonk_t *bonk, int64_t timestamp, uint32_t magnitude) {
 	bonk_event_t *buffered_bonk = &bonk->bonks[bonk->bonk_write_pos];
 	buffered_bonk->timestamp_us = timestamp;
-	buffered_bonk->magnitude = magnitude;
+	buffered_bonk->magnitude = MIN(magnitude, BONK_MAX_INTENSITY_THRESHOLD);
 	bonk->bonk_write_pos++;
 	bonk->bonk_write_pos %= ARRAY_SIZE(bonk->bonks);
 }
