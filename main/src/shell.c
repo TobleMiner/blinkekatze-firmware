@@ -416,6 +416,54 @@ static int bonk_duration(int argc, char **argv) {
 static struct {
 	struct arg_str *enable;
 	struct arg_end *end;
+} bonk_rssi_delay_args;
+
+static int bonk_rssi_delay(int argc, char **argv) {
+	bonk_rssi_delay_args.enable->sval[0] = "";
+	int errors = arg_parse(argc, argv, (void **)&bonk_rssi_delay_args);
+	if (errors) {
+		arg_print_errors(stderr, bonk_rssi_delay_args.end, argv[0]);
+		return 1;
+	}
+
+	bool enable;
+	int err = parse_on_off(bonk_rssi_delay_args.enable->sval[0], &enable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", bonk_rssi_delay_args.enable->sval[0]);
+		return 1;
+	}
+
+	bonk_set_delay_enable(the_bonk, enable);
+
+	return 0;
+}
+
+static struct {
+	rssi_delay_model_args_t delay_model_args;
+	struct arg_end *end;
+} bonk_rssi_delay_model_args;
+
+static int bonk_rssi_delay_model(int argc, char **argv) {
+	int errors = arg_parse(argc, argv, (void **)&bonk_rssi_delay_model_args);
+	if (errors) {
+		arg_print_errors(stderr, bonk_rssi_delay_model_args.end, argv[0]);
+		return 1;
+	}
+
+	neighbour_rssi_delay_model_t delay_model;
+	int err = handle_rssi_delay_model_args(&bonk_rssi_delay_model_args.delay_model_args, &delay_model);
+	if (err) {
+		return err;
+	}
+
+	bonk_set_rssi_delay_model(the_bonk, &delay_model);
+
+	return 0;
+}
+
+static struct {
+	struct arg_str *enable;
+	struct arg_end *end;
 } bonk_decay_args;
 
 static int bonk_decay(int argc, char **argv) {
@@ -580,6 +628,22 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 "Set rainbow fade cycle time",
 			 bonk_duration,
 			 &bonk_duration_args);
+
+	bonk_rssi_delay_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable bonk delay based on RSSI");
+	bonk_rssi_delay_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("bonk_rssi_delay",
+			 "Enable or disable bonk delay based on RSSI",
+			 bonk_rssi_delay,
+			 &bonk_rssi_delay_args);
+
+	delay_model_args_init(&bonk_rssi_delay_model_args.delay_model_args);
+	bonk_rssi_delay_model_args.end = arg_end(4);
+
+	ADD_COMMAND_ARGS("bonk_rssi_delay_model",
+			 "Configure model used to calculate bonk delay",
+			 bonk_rssi_delay_model,
+			 &bonk_rssi_delay_model_args);
 
 	bonk_decay_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable bonk brightness decay");
 	bonk_decay_args.end = arg_end(1);

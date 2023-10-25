@@ -182,6 +182,9 @@ static void rx_bonk(bonk_t *bonk, const bonk_packet_t *bonk_packet, const neighb
 	int64_t local_timestamp = now;
 	if (neigh) {
 		local_timestamp = neighbour_remote_to_local_time(neigh, bonk_packet->bonk.timestamp_us);
+		if (bonk->enable_delay) {
+			local_timestamp += neighbour_calculate_rssi_delay(&bonk->delay_model, neigh);
+		}
 	}
 	process_bonk(bonk, local_timestamp, bonk_packet->bonk.magnitude);
 }
@@ -246,9 +249,23 @@ void bonk_set_decay_enable(bonk_t *bonk, bool enable) {
 	}
 }
 
+void bonk_set_delay_enable(bonk_t *bonk, bool enable) {
+	if (bonk->enable_delay != enable) {
+		bonk->enable_delay = enable;
+		config_changed(bonk);
+	}
+}
+
 void bonk_set_duration(bonk_t *bonk, unsigned int duration) {
 	if (bonk->bonk_duration_ms != duration) {
 		bonk->bonk_duration_ms = duration;
+		config_changed(bonk);
+	}
+}
+
+void bonk_set_rssi_delay_model(bonk_t *bonk, const neighbour_rssi_delay_model_t *model) {
+	if (memcmp(model, &bonk->delay_model, sizeof(*model))) {
+		bonk->delay_model = *model;
 		config_changed(bonk);
 	}
 }
