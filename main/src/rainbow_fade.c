@@ -106,7 +106,7 @@ void rainbow_fade_apply(color_hsv_t *color) {
 		neighbour_t *clock_source;
 		int64_t now = neighbour_get_global_clock_and_source(&clock_source);
 		if (rainbow_fade.enable_phase_shift && clock_source) {
-			now += neighbour_calculate_rssi_delay(&rainbow_fade.delay_model, clock_source);
+			now -= neighbour_calculate_rssi_delay(&rainbow_fade.delay_model, clock_source);
 		}
 		int64_t cycle_val = now / 1000 * HSV_HUE_STEPS / (int64_t)rainbow_fade.hue_cycle_time_ms;
 		uint16_t hue_delta = cycle_val % HSV_HUE_STEPS;
