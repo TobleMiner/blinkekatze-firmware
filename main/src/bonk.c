@@ -71,15 +71,11 @@ static void bonk_tx_bonk(int64_t timestamp, uint32_t magnitude) {
 }
 
 static void process_bonk(bonk_t *bonk, int64_t now, int64_t timestamp, uint32_t magnitude) {
-	uint32_t bonk_decay = (int64_t)BONK_MAX_INTENSITY_THRESHOLD * (now - timestamp) / MS_TO_US((int64_t)bonk->bonk_duration_ms);
-	if (bonk_decay < magnitude) {
-		magnitude -= bonk_decay;
-		if (bonk->magnitude + magnitude <= BONK_MAX_INTENSITY_THRESHOLD) {
-			bonk->magnitude += magnitude;
-		} else {
-			bonk->magnitude = BONK_MAX_INTENSITY_THRESHOLD;
-		}
-	}
+	bonk_event_t *buffered_bonk = &bonk->bonks[bonk->bonk_write_pos];
+	buffered_bonk->timestamp_us = timestamp;
+	buffered_bonk->magnitude = magnitude;
+	bonk->bonk_write_pos++;
+	bonk->bonk_write_pos %= ARRAY_SIZE(bonk->bonks);
 }
 
 static void bonk_tx_config(bonk_t *bonk) {
@@ -136,26 +132,43 @@ static void config_update(bonk_t *bonk) {
 	bonk_tx_config(bonk);
 }
 
+static void update_magnitude(bonk_t *bonk) {
+	int64_t now = esp_timer_get_time();
+	uint32_t magnitude = 0;
+	for (int i = 0; i < ARRAY_SIZE(bonk->bonks); i++) {
+		const bonk_event_t *buffered_bonk = &bonk->bonks[i];
+		int64_t bonk_age = now - buffered_bonk->timestamp_us;
+		if (bonk_age < MS_TO_US((int64_t)bonk->bonk_duration_ms)) {
+			uint32_t bonk_decay = (int64_t)BONK_MAX_INTENSITY_THRESHOLD * bonk_age / MS_TO_US((int64_t)bonk->bonk_duration_ms);
+			if (bonk_decay < buffered_bonk->magnitude) {
+				uint32_t local_magnitude = buffered_bonk->magnitude - bonk_decay;
+				if (magnitude + local_magnitude <= BONK_MAX_INTENSITY_THRESHOLD) {
+					magnitude += local_magnitude;
+				} else {
+					magnitude = BONK_MAX_INTENSITY_THRESHOLD;
+					break;
+				}
+			}
+		}
+	}
+
+	bonk->magnitude = magnitude;
+}
+
 esp_err_t bonk_update(bonk_t *bonk) {
 	esp_err_t err = lis3dh_update(bonk->accel);
 	if (err) {
 		ESP_LOGE(TAG, "Failed to update accelerometer: %d", err);
 		return err;
 	}
-	int64_t now = esp_timer_get_time();
-	uint32_t bonk_decay = (int64_t)BONK_MAX_INTENSITY_THRESHOLD * (now - bonk->timestamp_last_update) / MS_TO_US((int64_t)bonk->bonk_duration_ms);
-	if (bonk_decay <= bonk->magnitude) {
-		bonk->magnitude -= bonk_decay;
-	} else {
-		bonk->magnitude = 0;
-	}
 	if (lis3dh_has_click_been_detected(bonk->accel)) {
+		int64_t now = esp_timer_get_time();
 		uint32_t velocity_magnitude = ABS(lis3dh_get_click_velocity(bonk->accel));
 		bonk_tx_bonk(now, velocity_magnitude);
 		process_bonk(bonk, now, now, velocity_magnitude);
 		ESP_LOGD(TAG, "BONK! intensity: %lu", (long unsigned int)velocity_magnitude);
 	}
-	bonk->timestamp_last_update = now;
+	update_magnitude(bonk);
 	config_update(bonk);
 	return ESP_OK;
 }

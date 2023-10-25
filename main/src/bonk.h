@@ -20,7 +20,6 @@ typedef struct bonk_event {
 
 typedef struct bonk {
 	lis3dh_t *accel;
-	int64_t timestamp_last_update;
 	int64_t last_rx_timestamp_us;
 	int64_t last_tx_timestamp_us;
 	int64_t config_timestamp_us;
