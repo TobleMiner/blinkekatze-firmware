@@ -70,7 +70,7 @@ static void bonk_tx_bonk(int64_t timestamp, uint32_t magnitude) {
 	wireless_broadcast((const uint8_t *)&packet, sizeof(packet));
 }
 
-static void process_bonk(bonk_t *bonk, int64_t now, int64_t timestamp, uint32_t magnitude) {
+static void process_bonk(bonk_t *bonk, int64_t timestamp, uint32_t magnitude) {
 	bonk_event_t *buffered_bonk = &bonk->bonks[bonk->bonk_write_pos];
 	buffered_bonk->timestamp_us = timestamp;
 	buffered_bonk->magnitude = magnitude;
@@ -165,7 +165,7 @@ esp_err_t bonk_update(bonk_t *bonk) {
 		int64_t now = esp_timer_get_time();
 		uint32_t velocity_magnitude = ABS(lis3dh_get_click_velocity(bonk->accel));
 		bonk_tx_bonk(now, velocity_magnitude);
-		process_bonk(bonk, now, now, velocity_magnitude);
+		process_bonk(bonk, now, velocity_magnitude);
 		ESP_LOGD(TAG, "BONK! intensity: %lu", (long unsigned int)velocity_magnitude);
 	}
 	update_magnitude(bonk);
@@ -179,7 +179,7 @@ static void rx_bonk(bonk_t *bonk, const bonk_packet_t *bonk_packet, const neighb
 	if (neigh) {
 		local_timestamp = neighbour_remote_to_local_time(neigh, bonk_packet->bonk.timestamp_us);
 	}
-	process_bonk(bonk, now, local_timestamp, bonk_packet->bonk.magnitude);
+	process_bonk(bonk, local_timestamp, bonk_packet->bonk.magnitude);
 }
 
 static void rx_config(bonk_t *bonk, const wireless_packet_t *packet, const bonk_packet_t *bonk_packet) {
