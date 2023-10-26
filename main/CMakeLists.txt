@@ -16,6 +16,7 @@ set(srcs
 	src/node_info.c
 	src/ota.c
 	src/rainbow_fade.c
+	src/shared_config.c
 	src/shell.c
 	src/spl06.c
 	src/squish.c

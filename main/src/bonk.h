@@ -8,6 +8,7 @@
 #include "lis3dh.h"
 #include "neighbour_rssi_delay_model.h"
 #include "neighbour.h"
+#include "shared_config.h"
 #include "wireless.h"
 
 #define BONK_MAX_INTENSITY 1000
@@ -20,9 +21,7 @@ typedef struct bonk_event {
 
 typedef struct bonk {
 	lis3dh_t *accel;
-	int64_t last_rx_timestamp_us;
-	int64_t last_tx_timestamp_us;
-	int64_t config_timestamp_us;
+	shared_config_t shared_cfg;
 	uint32_t magnitude;
 	bonk_event_t bonks[BONK_NUM_EVENTS];
 	unsigned int bonk_write_pos;

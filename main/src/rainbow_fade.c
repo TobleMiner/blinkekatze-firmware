@@ -7,20 +7,17 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 
+#include "shared_config.h"
 #include "util.h"
 
 #define HUE_CYCLE_TIME_MS	10000
-#define CONFIG_TX_INTERVAL_MS	10000
-#define CONFIG_CHANGE_TX_TIMES	3
 
 typedef struct rainbow_fade {
-	int64_t config_timestamp_us;
 	unsigned long hue_cycle_time_ms;
 	bool enable;
 	bool enable_phase_shift;
 	neighbour_rssi_delay_model_t delay_model;
-	int64_t last_rx_timestamp_us;
-	int64_t last_tx_timestamp_us;
+	shared_config_t shared_cfg;
 } rainbow_fade_t;
 
 #define FLAG_ENABLE		BIT(0)
@@ -32,7 +29,7 @@ typedef struct rainbow_fade_config_packet {
 	int8_t delay_model_rssi_treshold;
 	int8_t delay_model_rssi_limit;
 	uint32_t hue_cycle_time_ms;
-	int64_t config_timestamp_us;
+	shared_config_hdr_t shared_cfg_hdr;
 	int32_t delay_model_us_delay_per_rssi_step;
 	int32_t delay_model_delay_limit_us;
 } __attribute__((packed)) rainbow_fade_config_packet_t;
@@ -40,7 +37,7 @@ typedef struct rainbow_fade_config_packet {
 static const char *TAG = "rainbow_fade";
 
 static rainbow_fade_t rainbow_fade = {
-	.config_timestamp_us = 0,
+	.shared_cfg = { 0 },
 	.hue_cycle_time_ms = HUE_CYCLE_TIME_MS,
 	.enable = true,
 	.delay_model = {
@@ -54,7 +51,6 @@ static rainbow_fade_t rainbow_fade = {
 static void rainbow_fade_tx(void) {
 	rainbow_fade_config_packet_t packet = {
 		.packet_type = WIRELESS_PACKET_TYPE_RAINBOW_FADE,
-		.config_timestamp_us = rainbow_fade.config_timestamp_us,
 		.hue_cycle_time_ms = rainbow_fade.hue_cycle_time_ms,
 		.flags =
 			(rainbow_fade.enable ? FLAG_ENABLE : 0) |
@@ -64,41 +60,23 @@ static void rainbow_fade_tx(void) {
 		.delay_model_us_delay_per_rssi_step = rainbow_fade.delay_model.us_delay_per_rssi_step,
 		.delay_model_delay_limit_us = rainbow_fade.delay_model.delay_limit_us
 	};
-
-	rainbow_fade.last_tx_timestamp_us = esp_timer_get_time();
+	shared_config_hdr_init(&rainbow_fade.shared_cfg, &packet.shared_cfg_hdr);
 	wireless_broadcast((const uint8_t *)&packet, sizeof(packet));
+	shared_config_tx_done(&rainbow_fade.shared_cfg);
 }
 
 static void config_changed(void) {
-	int64_t now = neighbour_get_global_clock();
-	rainbow_fade.config_timestamp_us = now;
-	rainbow_fade.last_rx_timestamp_us = 0;
+	shared_config_update_local(&rainbow_fade.shared_cfg);
 
-	for (int i = 0; i < CONFIG_CHANGE_TX_TIMES; i++) {
+	for (int i = 0; i < SHARED_CONFIG_TX_TIMES; i++) {
 		rainbow_fade_tx();
 	}
 }
 
 void rainbow_fade_update() {
-	if (!rainbow_fade.config_timestamp_us) {
-		// We are in default config, no need to announce that
-		return;
+	if (shared_config_should_tx(&rainbow_fade.shared_cfg)) {
+		rainbow_fade_tx();
 	}
-
-	int64_t now = esp_timer_get_time();
-	int64_t delta_us_last_rx = now - rainbow_fade.last_rx_timestamp_us;
-	if (delta_us_last_rx / 1000LL < CONFIG_TX_INTERVAL_MS * 2) {
-		// Up to date config received from neighbour already, no need to distribute
-		return;
-	}
-
-	int64_t delta_us_last_tx = now - rainbow_fade.last_tx_timestamp_us;
-	if (delta_us_last_tx / 1000LL < CONFIG_TX_INTERVAL_MS) {
-		// Up to date config sent recently, do not flood the network
-		return;
-	}
-
-	rainbow_fade_tx();
 }
 
 void rainbow_fade_apply(color_hsv_t *color) {
@@ -124,7 +102,7 @@ void rainbow_fade_rx(const wireless_packet_t *packet) {
 	}
 	memcpy(&config_packet, packet->data, sizeof(config_packet));
 
-	if (config_packet.config_timestamp_us > rainbow_fade.config_timestamp_us) {
+	if (shared_config_update_remote(&rainbow_fade.shared_cfg, &config_packet.shared_cfg_hdr)) {
 		rainbow_fade.hue_cycle_time_ms = config_packet.hue_cycle_time_ms;
 		rainbow_fade.enable = !!(config_packet.flags & FLAG_ENABLE);
 		rainbow_fade.enable_phase_shift = !!(config_packet.flags & FLAG_PHASE_SHIFT_ENABLE);
@@ -132,11 +110,6 @@ void rainbow_fade_rx(const wireless_packet_t *packet) {
 		rainbow_fade.delay_model.delay_rssi_limit = config_packet.delay_model_rssi_limit;
 		rainbow_fade.delay_model.us_delay_per_rssi_step = config_packet.delay_model_us_delay_per_rssi_step;
 		rainbow_fade.delay_model.delay_limit_us = config_packet.delay_model_delay_limit_us;
-		rainbow_fade.config_timestamp_us = config_packet.config_timestamp_us;
-	}
-
-	if (config_packet.config_timestamp_us >= rainbow_fade.config_timestamp_us) {
-		rainbow_fade.last_rx_timestamp_us = packet->rx_timestamp;
 	}
 }
 

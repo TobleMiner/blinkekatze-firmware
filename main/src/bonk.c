@@ -7,11 +7,8 @@
 
 #include "util.h"
 
-#define BONK_MIN_INTENSITY_THRESHOLD	2000
 #define BONK_MAX_INTENSITY_THRESHOLD	20000
 #define BONK_DURATION_MS		1000
-#define CONFIG_TX_INTERVAL_MS		10000
-#define CONFIG_CHANGE_TX_TIMES		3
 
 static const char *TAG = "bonk";
 
@@ -35,7 +32,7 @@ typedef struct bonk_packet {
 		struct {
 			uint8_t flags;
 			int8_t delay_model_rssi_treshold;
-			int64_t config_timestamp_us;
+			shared_config_hdr_t shared_cfg_hdr;
 			int32_t delay_model_us_delay_per_rssi_step;
 			int32_t delay_model_delay_limit_us;
 			uint16_t bonk_duration_ms;
@@ -88,48 +85,29 @@ static void bonk_tx_config(bonk_t *bonk) {
 				(bonk->enable_decay ? FLAG_DECAY_ENABLE : 0) |
 				(bonk->enable_delay ? FLAG_DELAY_ENABLE : 0),
 			.delay_model_rssi_treshold = bonk->delay_model.delay_rssi_threshold,
-			.config_timestamp_us = bonk->config_timestamp_us,
 			.bonk_duration_ms = bonk->bonk_duration_ms,
 			.delay_model_rssi_limit = bonk->delay_model.delay_rssi_limit,
 			.delay_model_us_delay_per_rssi_step = bonk->delay_model.us_delay_per_rssi_step,
 			.delay_model_delay_limit_us = bonk->delay_model.delay_limit_us
 		}
 	};
-
-	bonk->last_tx_timestamp_us = esp_timer_get_time();
+	shared_config_hdr_init(&bonk->shared_cfg, &packet.config.shared_cfg_hdr);
 	wireless_broadcast((const uint8_t *)&packet, sizeof(packet));
+	shared_config_tx_done(&bonk->shared_cfg);
 }
 
 static void config_changed(bonk_t *bonk) {
-	int64_t now = neighbour_get_global_clock();
-	bonk->config_timestamp_us = now;
-	bonk->last_rx_timestamp_us = 0;
+	shared_config_update_local(&bonk->shared_cfg);
 
-	for (int i = 0; i < CONFIG_CHANGE_TX_TIMES; i++) {
+	for (int i = 0; i < SHARED_CONFIG_TX_TIMES; i++) {
 		bonk_tx_config(bonk);
 	}
 }
 
 static void config_update(bonk_t *bonk) {
-	if (!bonk->config_timestamp_us) {
-		// We are in default config, no need to announce that
-		return;
+	if (shared_config_should_tx(&bonk->shared_cfg)) {
+		bonk_tx_config(bonk);
 	}
-
-	int64_t now = esp_timer_get_time();
-	int64_t delta_us_last_rx = now - bonk->last_rx_timestamp_us;
-	if (delta_us_last_rx / 1000LL < CONFIG_TX_INTERVAL_MS * 2) {
-		// Up to date config received from neighbour already, no need to distribute
-		return;
-	}
-
-	int64_t delta_us_last_tx = now - bonk->last_tx_timestamp_us;
-	if (delta_us_last_tx / 1000LL < CONFIG_TX_INTERVAL_MS) {
-		// Up to date config sent recently, do not flood the network
-		return;
-	}
-
-	bonk_tx_config(bonk);
 }
 
 static void update_magnitude(bonk_t *bonk) {
@@ -189,7 +167,7 @@ static void rx_bonk(bonk_t *bonk, const wireless_packet_t *packet, const bonk_pa
 }
 
 static void rx_config(bonk_t *bonk, const wireless_packet_t *packet, const bonk_packet_t *bonk_packet) {
-	if (bonk_packet->config.config_timestamp_us > bonk->config_timestamp_us) {
+	if (shared_config_update_remote(&bonk->shared_cfg, &bonk_packet->config.shared_cfg_hdr)) {
 		bonk->bonk_duration_ms = bonk_packet->config.bonk_duration_ms;
 		bonk->enable = !!(bonk_packet->config.flags & FLAG_BONK_ENABLE);
 		bonk->enable_decay = !!(bonk_packet->config.flags & FLAG_DECAY_ENABLE);
@@ -198,11 +176,6 @@ static void rx_config(bonk_t *bonk, const wireless_packet_t *packet, const bonk_
 		bonk->delay_model.delay_rssi_limit = bonk_packet->config.delay_model_rssi_limit;
 		bonk->delay_model.us_delay_per_rssi_step = bonk_packet->config.delay_model_us_delay_per_rssi_step;
 		bonk->delay_model.delay_limit_us = bonk_packet->config.delay_model_delay_limit_us;
-		bonk->config_timestamp_us = bonk_packet->config.config_timestamp_us;
-	}
-
-	if (bonk_packet->config.config_timestamp_us >= bonk->config_timestamp_us) {
-		bonk->last_rx_timestamp_us = packet->rx_timestamp;
 	}
 }
 
