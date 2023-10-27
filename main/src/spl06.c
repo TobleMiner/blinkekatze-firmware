@@ -26,29 +26,52 @@
 static const char *TAG = "spl06";
 
 static esp_err_t write_reg(spl06_t *spl, uint8_t reg, uint8_t val) {
-	spi_transaction_t xfer = {
-		.flags = SPI_TRANS_USE_TXDATA,
-		.cmd = reg,
-		.length = 8,
-		.rxlength = 0,
-		.tx_data = { val }
-	};
-	return spi_device_transmit(spl->spi, &xfer);
+	if (spl->is_i2c) {
+		uint8_t data[] = { reg, val };
+		return i2c_bus_write(spl->i2c.bus, spl->i2c.address, data, 2);
+	} else {
+		spi_transaction_t xfer = {
+			.flags = SPI_TRANS_USE_TXDATA,
+			.cmd = reg,
+			.length = 8,
+			.rxlength = 0,
+			.tx_data = { val }
+		};
+		return spi_device_transmit(spl->spi, &xfer);
+	}
 }
 
 static esp_err_t read_reg(spl06_t *spl, uint8_t reg, uint8_t *val) {
-	spi_transaction_t xfer = {
-		.flags = SPI_TRANS_USE_TXDATA,
-		.cmd = reg | 0x80,
-		.length = 8,
-		.rxlength = 8,
-		.tx_data = { 0xff },
-		.rx_buffer = val
-	};
-	return spi_device_transmit(spl->spi, &xfer);
+	if (spl->is_i2c) {
+		return i2c_bus_read_byte(spl->i2c.bus, spl->i2c.address, reg, val);
+	} else {
+		spi_transaction_t xfer = {
+			.flags = SPI_TRANS_USE_TXDATA,
+			.cmd = reg | 0x80,
+			.length = 8,
+			.rxlength = 8,
+			.tx_data = { 0xff },
+			.rx_buffer = val
+		};
+		return spi_device_transmit(spl->spi, &xfer);
+	}
 }
 
-static esp_err_t read_24bit_signed(spl06_t *spl, uint8_t reg, int32_t *val) {
+static esp_err_t read_24bit_signed_i2c(spl06_t *spl, uint8_t reg, int32_t *val) {
+	uint8_t cmd = reg;
+	uint8_t buf[3];
+	esp_err_t err = i2c_bus_write_then_read(spl->i2c.bus, spl->i2c.address, &cmd, 1, buf, 3);
+	if (err) {
+		return err;
+	}
+	int32_t value = (int32_t)buf[0] << 16 |
+			(int32_t)buf[1] << 8 |
+			(int32_t)buf[2] << 0;
+	*val = value;
+	return ESP_OK;
+}
+
+static esp_err_t read_24bit_signed_spi(spl06_t *spl, uint8_t reg, int32_t *val) {
 	spi_transaction_t xfer = {
 		.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA,
 		.cmd = reg | 0x80,
@@ -76,28 +99,18 @@ static esp_err_t read_24bit_signed(spl06_t *spl, uint8_t reg, int32_t *val) {
 	return ESP_OK;
 }
 
-esp_err_t spl06_init(spl06_t *spl, spi_host_device_t spi_host, int gpio_cs) {
-	spi_device_interface_config_t dev_cfg = {
-		.command_bits = 8,
-		.address_bits = 0,
-		.dummy_bits = 0,
-		.mode = 3,
-		.duty_cycle_pos = 0,
-		.cs_ena_pretrans = 0,
-		.cs_ena_posttrans = 0,
-		.clock_speed_hz = 3000000,
-		.input_delay_ns = 0,
-		.spics_io_num = gpio_cs,
-		.queue_size = 1,
-	};
-	esp_err_t err = spi_bus_add_device(spi_host, &dev_cfg, &spl->spi);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to register SPI device: %d", err);
-		return err;
+static esp_err_t read_24bit_signed(spl06_t *spl, uint8_t reg, int32_t *val) {
+	if (spl->is_i2c) {
+		return read_24bit_signed_i2c(spl, reg, val);
+	} else {
+		return read_24bit_signed_spi(spl, reg, val);
 	}
+}
 
+
+esp_err_t spl06_init_(spl06_t *spl) {
 	uint8_t prod_rev;
-	err = read_reg(spl, REG_PRODUCT_ID, &prod_rev);
+	esp_err_t err = read_reg(spl, REG_PRODUCT_ID, &prod_rev);
 	if (err) {
 		ESP_LOGE(TAG, "Failed to read product id: %d", err);
 		return err;
@@ -138,6 +151,36 @@ esp_err_t spl06_init(spl06_t *spl, spi_host_device_t spi_host, int gpio_cs) {
 	return ESP_OK;
 }
 
+esp_err_t spl06_init_spi(spl06_t *spl, spi_host_device_t spi_host, int gpio_cs) {
+	spi_device_interface_config_t dev_cfg = {
+		.command_bits = 8,
+		.address_bits = 0,
+		.dummy_bits = 0,
+		.mode = 3,
+		.duty_cycle_pos = 0,
+		.cs_ena_pretrans = 0,
+		.cs_ena_posttrans = 0,
+		.clock_speed_hz = 3000000,
+		.input_delay_ns = 0,
+		.spics_io_num = gpio_cs,
+		.queue_size = 1,
+	};
+	esp_err_t err = spi_bus_add_device(spi_host, &dev_cfg, &spl->spi);
+	if (err) {
+		ESP_LOGE(TAG, "Failed to register SPI device: %d", err);
+		return err;
+	}
+	spl->is_i2c = false;
+	return spl06_init_(spl);
+}
+
+esp_err_t spl06_init_i2c(spl06_t *spl, i2c_bus_t *bus, uint8_t address) {
+	spl->is_i2c = true;
+	spl->i2c.bus = bus;
+	spl->i2c.address = address;
+	return spl06_init_(spl);
+}
+
 esp_err_t spl06_update(spl06_t *spl) {
 	uint8_t status;
 	esp_err_t err = read_reg(spl, REG_MEAS_CFG, &status);
@@ -147,7 +190,7 @@ esp_err_t spl06_update(spl06_t *spl) {
 	}
 
 	if (status & PRS_RDY) {
-		int32_t pressure;
+		int32_t pressure = 0;
 		err = read_24bit_signed(spl, REG_PRS_B2, &pressure);
 		if (err) {
 			ESP_LOGE(TAG, "Failed to read pressure: %d", err);
