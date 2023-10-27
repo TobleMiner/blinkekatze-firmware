@@ -32,6 +32,7 @@ typedef struct i2c_bus {
 typedef uint8_t* i2c_address_set_t;
 
 esp_err_t i2c_bus_init(i2c_bus_t* bus, i2c_port_t i2c_port, unsigned int gpio_sda, unsigned int gpio_scl, uint32_t speed_hz);
+esp_err_t i2c_bus_deinit(i2c_bus_t* bus);
 esp_err_t i2c_bus_cmd_begin(i2c_bus_t* bus, i2c_cmd_handle_t handle, TickType_t timeout);
 esp_err_t i2c_bus_write_then_read(i2c_bus_t *bus, uint8_t address,
 					 const uint8_t *data_write, unsigned int write_len,

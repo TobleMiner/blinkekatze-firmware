@@ -31,6 +31,10 @@ static esp_err_t i2c_bus_deinit_(i2c_bus_t* bus) {
 	return i2c_driver_delete(bus->i2c_port);
 }
 
+esp_err_t i2c_bus_deinit(i2c_bus_t* bus) {
+	return i2c_bus_deinit_(bus);
+}
+
 esp_err_t i2c_bus_init(i2c_bus_t* bus, i2c_port_t i2c_port, unsigned int gpio_sda, unsigned int gpio_scl, uint32_t speed_hz) {
 	memset(bus, 0, sizeof(*bus));
 	bus->i2c_port = i2c_port;
