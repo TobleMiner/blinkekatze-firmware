@@ -203,6 +203,7 @@ static StaticSemaphore_t main_lock_buffer;
 
 static squish_t squish;
 static bonk_t bonk;
+static bool is_rev2 = false;
 void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
@@ -213,10 +214,25 @@ void app_main(void) {
 
 	main_lock = xSemaphoreCreateMutexStatic(&main_lock_buffer);
 
+	i2c_bus_t i2c_bus;
+	i2c_bus_init(&i2c_bus, I2C_NUM_0, 0, 2, 100000);
+	bq27546_t gauge;
+	esp_err_t err =	bq27546_init(&gauge, &i2c_bus);
+	if (err) {
+		i2c_bus_deinit(&i2c_bus);
+		i2c_bus_init(&i2c_bus, I2C_NUM_0, 8, 2, 100000);
+		ESP_ERROR_CHECK(bq27546_init(&gauge, &i2c_bus));
+		is_rev2 = true;
+	}
+	ESP_LOGI(TAG, "Battery voltage: %dmV", bq27546_get_voltage_mv(&gauge));
+	int current_ma;
+	ESP_ERROR_CHECK(bq27546_get_current_ma(&gauge, &current_ma));
+	ESP_LOGI(TAG, "Battery current: %dmA", current_ma);
+
 	spi_bus_config_t spi_bus_cfg = {
-		.mosi_io_num = 7,
-		.miso_io_num = 6,
-		.sclk_io_num = 8,
+		.mosi_io_num = is_rev2 ? 3 : 7,
+		.miso_io_num = is_rev2 ? -1 : 6,
+		.sclk_io_num = is_rev2 ? -1 : 8,
 		.quadwp_io_num = -1,
 		.quadhd_io_num = -1,
 		.max_transfer_sz = 4092,
@@ -263,8 +279,6 @@ void app_main(void) {
 	gpio_set_direction(GPIO_POWER_ON, GPIO_MODE_INPUT);
 	gpio_set_pull_mode(GPIO_POWER_ON, GPIO_PULLDOWN_ONLY);
 
-	i2c_bus_t i2c_bus;
-	i2c_bus_init(&i2c_bus, I2C_NUM_0, 0, 2, 100000);
 //	i2c_detect(&i2c_bus);
 
 	bq24295_t charger;
@@ -289,13 +303,6 @@ void app_main(void) {
 	// Recharge battery if 300mV below charging voltage after charging
 	ESP_ERROR_CHECK(bq24295_set_recharge_threshold(&charger, BQ24295_RECHARGE_THRESHOLD_300MV));
 
-	bq27546_t gauge;
-	ESP_ERROR_CHECK(bq27546_init(&gauge, &i2c_bus));
-	ESP_LOGI(TAG, "Battery voltage: %dmV", bq27546_get_voltage_mv(&gauge));
-	int current_ma;
-	ESP_ERROR_CHECK(bq27546_get_current_ma(&gauge, &current_ma));
-	ESP_LOGI(TAG, "Battery current: %dmA", current_ma);
-
 	ESP_ERROR_CHECK(wireless_init());
 
 	neighbour_status_init(&gauge);
@@ -306,7 +313,11 @@ void app_main(void) {
 	bonk_init(&bonk, &accelerometer);
 
 	spl06_t barometer;
-	ESP_ERROR_CHECK(spl06_init(&barometer, SPI2_HOST, 9));
+	if (is_rev2) {
+		ESP_ERROR_CHECK(spl06_init_i2c(&barometer, &i2c_bus, 0x77));
+	} else {
+		ESP_ERROR_CHECK(spl06_init_spi(&barometer, SPI2_HOST, 9));
+	}
 	squish_init(&squish, &barometer);
 
 	status_leds_init();
@@ -408,9 +419,11 @@ void app_main(void) {
 			spi_device_get_trans_result(dev, &xfer_, portMAX_DELAY);
 			transaction_pending = false;
 		}
-		gpio_set_direction(3, GPIO_MODE_OUTPUT);
-		gpio_set_level(3, 0);
-		gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
+		if (!is_rev2) {
+			gpio_set_direction(3, GPIO_MODE_OUTPUT);
+			gpio_set_level(3, 0);
+			gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
+		}
 
 		squish_update(&squish);
 
@@ -431,7 +444,9 @@ void app_main(void) {
 		xfer.rxlength = 0;
 		xfer.tx_buffer = led_data;
 		xfer.rx_buffer = NULL;
-		esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
+		if (!is_rev2) {
+			esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
+		}
 		ESP_ERROR_CHECK(spi_device_queue_trans(dev, &xfer, 0));
 		transaction_pending = true;
 
