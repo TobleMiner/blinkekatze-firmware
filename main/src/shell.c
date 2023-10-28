@@ -327,10 +327,39 @@ static int color_override(int argc, char **argv) {
 	return 0;
 }
 
-static struct {
+typedef struct rgb16_args {
 	struct arg_int *r;
 	struct arg_int *g;
 	struct arg_int *b;
+} rgb16_args_t;
+
+static int handle_rgb16_args(const rgb16_args_t *args, rgb16_t *color) {
+	int r = *args->r->ival;
+	if (r < 0 || r > 65535) {
+		fprintf(stderr, "Red portion must be 0 - 65535\r\n");
+		return 1;
+	}
+
+	int g = *args->g->ival;
+	if (g < 0 || g > 65535) {
+		fprintf(stderr, "Green portion must be 0 - 65535\r\n");
+		return 1;
+	}
+
+	int b = *args->b->ival;
+	if (b < 0 || b > 65535) {
+		fprintf(stderr, "Blue portion must be 0 - 65535\r\n");
+		return 1;
+	}
+
+	color->r = r;
+	color->g = g;
+	color->b = b;
+	return 0;
+}
+
+static struct {
+	rgb16_args_t rgb;
 	struct arg_end *end;
 } color_override_color_args;
 
@@ -341,26 +370,49 @@ static int color_override_color(int argc, char **argv) {
 		return 1;
 	}
 
-	int r = *color_override_color_args.r->ival;
-	if (r < 0 || r > 65535) {
-		fprintf(stderr, "Red portion must be 0 - 65535\r\n");
-		return 1;
+	rgb16_t color;
+	int err = handle_rgb16_args(&color_override_color_args.rgb, &color);
+	if (err) {
+		return err;
 	}
-
-	int g = *color_override_color_args.g->ival;
-	if (g < 0 || g > 65535) {
-		fprintf(stderr, "Green portion must be 0 - 65535\r\n");
-		return 1;
-	}
-
-	int b = *color_override_color_args.b->ival;
-	if (b < 0 || b > 65535) {
-		fprintf(stderr, "Blue portion must be 0 - 65535\r\n");
-		return 1;
-	}
-
-	rgb16_t color = { r, g, b};
 	color_override_set_color(&color);
+
+	return 0;
+}
+
+static struct {
+	rgb16_args_t rgb;
+	struct arg_int *duration;
+	struct arg_end *end;
+} color_override_remote_color_args;
+
+static int color_override_remote_color(int argc, char **argv) {
+	int errors = arg_parse(argc, argv, (void **)&color_override_remote_color_args);
+	if (errors) {
+		arg_print_errors(stderr, color_override_remote_color_args.end, argv[0]);
+		return 1;
+	}
+
+	rgb16_t color;
+	int err = handle_rgb16_args(&color_override_remote_color_args.rgb, &color);
+	if (err) {
+		return err;
+	}
+
+	int duration_ms = *color_override_remote_color_args.duration->ival;
+	if (duration_ms <= 0) {
+		fprintf(stderr, "duration must be >= 0\r\n");
+		return 1;
+	}
+
+	main_loop_lock();
+	int64_t now_global = neighbour_get_global_clock();
+	int64_t override_stop = now_global + (int64_t)duration_ms * 1000LL;
+
+	for (int i = 0; i < 3; i++) {
+		color_override_tx(&color, now_global, override_stop);
+	}
+	main_loop_unlock();
 
 	return 0;
 }
@@ -513,6 +565,12 @@ static void delay_model_args_init(rssi_delay_model_args_t *args) {
 	args->delay_limit = arg_int1(NULL, NULL, "us", "Maximum delay in us (set to 0 to disable)");
 }
 
+static void rgb16_args_init(rgb16_args_t *args) {
+	args->r = arg_int1(NULL, NULL, "r", "Red color portion, 0 - 65535");
+	args->g = arg_int1(NULL, NULL, "g", "Green color portion, 0 - 65535");
+	args->b = arg_int1(NULL, NULL, "b", "Blue color portion, 0 - 65535");
+}
+
 esp_err_t shell_init(bonk_t *bonk_) {
 	the_bonk = bonk_;
 
@@ -603,15 +661,22 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 color_override,
 			 &color_override_args);
 
-	color_override_color_args.r = arg_int1(NULL, NULL, "r", "Red color portion, 0 - 65535");
-	color_override_color_args.g = arg_int1(NULL, NULL, "g", "Green color portion, 0 - 65535");
-	color_override_color_args.b = arg_int1(NULL, NULL, "b", "Blue color portion, 0 - 65535");
+	rgb16_args_init(&color_override_color_args.rgb);
 	color_override_color_args.end = arg_end(3);
 
 	ADD_COMMAND_ARGS("color_override_color",
 			 "Set color override color",
 			 color_override_color,
 			 &color_override_color_args);
+
+	rgb16_args_init(&color_override_remote_color_args.rgb);
+	color_override_remote_color_args.duration = arg_int1(NULL, NULL, "duration ms", "Duration of the override in ms");
+	color_override_remote_color_args.end = arg_end(4);
+
+	ADD_COMMAND_ARGS("color_override_remote_color",
+			 "Set temporary global remote color override",
+			 color_override_remote_color,
+			 &color_override_remote_color_args);
 
 	bonk_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable bonk");
 	bonk_args.end = arg_end(1);

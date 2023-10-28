@@ -22,7 +22,8 @@ typedef enum wireless_packet_type {
 	WIRELESS_PACKET_TYPE_OTA = 4,
 	WIRELESS_PACKET_TYPE_UID = 5,
 	WIRELESS_PACKET_TYPE_SQUISH = 6,
-	WIRELESS_PACKET_TYPE_RAINBOW_FADE = 7
+	WIRELESS_PACKET_TYPE_RAINBOW_FADE = 7,
+	WIRELESS_PACKET_TYPE_COLOR_OVERRIDE = 8
 } wireless_packet_type_t;
 
 typedef struct wireless_packet {

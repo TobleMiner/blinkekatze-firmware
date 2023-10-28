@@ -386,6 +386,9 @@ void app_main(void) {
 				case WIRELESS_PACKET_TYPE_RAINBOW_FADE:
 					rainbow_fade_rx(&packet);
 					break;
+				case WIRELESS_PACKET_TYPE_COLOR_OVERRIDE:
+					color_override_rx(&packet);
+					break;
 				default:
 					ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
 				}
