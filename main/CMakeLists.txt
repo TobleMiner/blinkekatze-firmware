@@ -15,6 +15,7 @@ set(srcs
 	src/neighbour_status.c
 	src/node_info.c
 	src/ota.c
+	src/power_control.c
 	src/rainbow_fade.c
 	src/shared_config.c
 	src/shell.c

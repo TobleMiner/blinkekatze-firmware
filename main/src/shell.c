@@ -12,6 +12,7 @@
 #include "neighbour.h"
 #include "node_info.h"
 #include "ota.h"
+#include "power_control.h"
 #include "rainbow_fade.h"
 #include "uid.h"
 #include "util.h"
@@ -555,6 +556,31 @@ static int bonk_decay(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_str *enable;
+	struct arg_end *end;
+} ignore_power_switch_args;
+
+static int ignore_power_switch(int argc, char **argv) {
+	ignore_power_switch_args.enable->sval[0] = "";
+	int errors = arg_parse(argc, argv, (void **)&ignore_power_switch_args);
+	if (errors) {
+		arg_print_errors(stderr, ignore_power_switch_args.end, argv[0]);
+		return 1;
+	}
+
+	bool enable;
+	int err = parse_on_off(ignore_power_switch_args.enable->sval[0], &enable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", ignore_power_switch_args.enable->sval[0]);
+		return 1;
+	}
+
+	power_control_set_ignore_power_switch(enable);
+
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -735,6 +761,14 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 "Enable or disable bonk brightness decay",
 			 bonk_decay,
 			 &bonk_decay_args);
+
+	ignore_power_switch_args.enable = arg_str1(NULL, NULL, "on|off", "Enable/disable ignoring the physical power switch");
+	ignore_power_switch_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("ignore_power_switch",
+			 "Enable or disable physical power switch",
+			 ignore_power_switch,
+			 &ignore_power_switch_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);

@@ -96,7 +96,7 @@ void rainbow_fade_apply(color_hsv_t *color) {
 void rainbow_fade_rx(const wireless_packet_t *packet) {
 	rainbow_fade_config_packet_t config_packet;
 	if (packet->len < sizeof(config_packet)) {
-		ESP_LOGD(TAG, "Receied short packet, expected %u bytes but got only %u bytes",
+		ESP_LOGD(TAG, "Received short packet, expected %u bytes but got only %u bytes",
 		         sizeof(config_packet), packet->len);
 		return;
 	}

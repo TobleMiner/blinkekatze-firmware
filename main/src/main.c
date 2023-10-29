@@ -33,6 +33,7 @@
 #include "neighbour_static_info.h"
 #include "neighbour_status.h"
 #include "ota.h"
+#include "power_control.h"
 #include "rainbow_fade.h"
 #include "shell.h"
 #include "spl06.h"
@@ -44,9 +45,6 @@
 #include "wireless.h"
 
 static const char *TAG = "main";
-
-#define GPIO_POWER_ON	10
-#define GPIO_CHARGE_EN	 1
 
 #define NUM_LEDS	16
 #define BITS_PER_SYMBOL	4
@@ -208,10 +206,6 @@ void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
 
-	gpio_reset_pin(GPIO_CHARGE_EN);
-	gpio_set_direction(GPIO_CHARGE_EN, GPIO_MODE_OUTPUT);
-	gpio_set_level(GPIO_CHARGE_EN, 0);
-
 	main_lock = xSemaphoreCreateMutexStatic(&main_lock_buffer);
 
 	i2c_bus_t i2c_bus;
@@ -275,33 +269,12 @@ void app_main(void) {
 	};
 	ESP_ERROR_CHECK(spi_device_transmit(dev, &xfer));
 
-	gpio_reset_pin(GPIO_POWER_ON);
-	gpio_set_direction(GPIO_POWER_ON, GPIO_MODE_INPUT);
-	gpio_set_pull_mode(GPIO_POWER_ON, GPIO_PULLDOWN_ONLY);
-
 //	i2c_detect(&i2c_bus);
 
 	bq24295_t charger;
-	// Reset charger to default settings
 	bq24295_init(&charger, &i2c_bus);
-	ESP_ERROR_CHECK(bq24295_reset(&charger));
-	vTaskDelay(pdMS_TO_TICKS(10));
 
-	// Setup charger settings
-	// Min system voltage 3.0V
-	ESP_ERROR_CHECK(bq24295_set_min_system_voltage(&charger, 3000));
-	// Boost voltage 4.55V
-	ESP_ERROR_CHECK(bq24295_set_boost_voltage(&charger, 4550));
-	// Set input current limit to 1A
-	ESP_ERROR_CHECK(bq24295_set_input_current_limit(&charger, 1000));
-	// Set charging current to 1024mA
-	ESP_ERROR_CHECK(bq24295_set_charge_current(&charger, 1024));
-	// Terminate charge at 128mA
-	ESP_ERROR_CHECK(bq24295_set_termination_current(&charger, 128));
-	// Assert battery low at 2.8V
-	ESP_ERROR_CHECK(bq24295_set_battery_low_threshold(&charger, BQ24295_BATTERY_LOW_THRESHOLD_2_8V));
-	// Recharge battery if 300mV below charging voltage after charging
-	ESP_ERROR_CHECK(bq24295_set_recharge_threshold(&charger, BQ24295_RECHARGE_THRESHOLD_300MV));
+	ESP_ERROR_CHECK(power_control_init(&charger));
 
 	ESP_ERROR_CHECK(wireless_init());
 
@@ -327,25 +300,13 @@ void app_main(void) {
 
 	shell_init(&bonk);
 
-	bool shutdown = false;
 	unsigned loop_interval_ms = 20;
 	bool transaction_pending = false;
 	uint64_t loops = 0;
 	while (1) {
 		int64_t time_loop_start_us = esp_timer_get_time();
 
-		if (!gpio_get_level(GPIO_POWER_ON)) {
-			if (shutdown) {
-				// Disable watchdog and other timers
-				ESP_ERROR_CHECK(bq24295_set_watchdog_timeout(&charger, BQ24295_WATCHDOG_TIMEOUT_DISABLED));
-				// Disable BATFET
-				ESP_ERROR_CHECK(bq24295_set_shutdown(&charger, true));
-			}
-			ESP_LOGI(TAG, "Shutdown requested");
-			shutdown = true;
-		} else {
-			shutdown = false;
-		}
+		power_control_update();
 
 		bonk_update(&bonk);
 		rainbow_fade_update();
@@ -388,6 +349,9 @@ void app_main(void) {
 					break;
 				case WIRELESS_PACKET_TYPE_COLOR_OVERRIDE:
 					color_override_rx(&packet);
+					break;
+				case WIRELESS_PACKET_TYPE_POWER_CONTROL:
+					power_control_rx(&packet);
 					break;
 				default:
 					ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
@@ -455,11 +419,6 @@ void app_main(void) {
 
 		neighbour_static_info_update();
 		neighbour_status_update();
-
-		if (loops % 500 == 0) {
-			// Charger watchdog reset
-			bq24295_watchdog_reset(&charger);
-		}
 
 		if (loops % 500 == 250) {
 			wireless_scan_aps();
