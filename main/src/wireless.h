@@ -26,6 +26,8 @@ typedef enum wireless_packet_type {
 	WIRELESS_PACKET_TYPE_COLOR_OVERRIDE = 8
 } wireless_packet_type_t;
 
+typedef uint8_t wireless_address_t[ESP_NOW_ETH_ALEN];
+
 typedef struct wireless_packet {
 	int64_t rx_timestamp;
 	uint8_t src_addr[ESP_NOW_ETH_ALEN];
@@ -49,3 +51,6 @@ int wireless_get_ap_ifindex(void);
 int wireless_get_sta_ifindex(void);
 bool wireless_is_sta_connected(void);
 const uint8_t *wireless_get_mac_address(void);
+const uint8_t *wireless_get_broadcast_address(void);
+bool wireless_is_broadcast_address(const uint8_t *addr);
+bool wireless_is_local_address(const uint8_t *addr);

@@ -279,3 +279,15 @@ bool wireless_is_sta_connected() {
 const uint8_t *wireless_get_mac_address() {
 	return ap_mac_address;
 }
+
+const uint8_t *wireless_get_broadcast_address() {
+	return wireless_broadcast_address;
+}
+
+bool wireless_is_broadcast_address(const uint8_t *addr) {
+	return !memcmp(addr, wireless_broadcast_address, sizeof(wireless_broadcast_address));
+}
+
+bool wireless_is_local_address(const uint8_t *addr) {
+	return !memcmp(addr, ap_mac_address, sizeof(ap_mac_address));
+}
