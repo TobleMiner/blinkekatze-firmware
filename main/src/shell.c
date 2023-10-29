@@ -381,16 +381,29 @@ static int color_override_color(int argc, char **argv) {
 }
 
 static struct {
+	struct arg_str *address;
 	rgb16_args_t rgb;
 	struct arg_int *duration;
 	struct arg_end *end;
 } color_override_remote_color_args;
 
 static int color_override_remote_color(int argc, char **argv) {
+	color_override_remote_color_args.address->sval[0] = "";
 	int errors = arg_parse(argc, argv, (void **)&color_override_remote_color_args);
 	if (errors) {
 		arg_print_errors(stderr, color_override_remote_color_args.end, argv[0]);
 		return 1;
+	}
+
+	bool broadcast = true;
+	wireless_address_t dst_addr;
+	if (strlen(color_override_remote_color_args.address->sval[0])) {
+		int err = parse_mac_address(color_override_remote_color_args.address->sval[0], dst_addr);
+		if (err) {
+			fprintf(stderr, "'%s' is not a valid node address\r\n", color_override_remote_color_args.address->sval[0]);
+			return err;
+		}
+		broadcast = false;
 	}
 
 	rgb16_t color;
@@ -410,7 +423,11 @@ static int color_override_remote_color(int argc, char **argv) {
 	int64_t override_stop = now_global + (int64_t)duration_ms * 1000LL;
 
 	for (int i = 0; i < 3; i++) {
-		color_override_tx(&color, now_global, override_stop);
+		if (broadcast) {
+			color_override_broadcast(&color, now_global, override_stop);
+		} else {
+			color_override_tx(&color, now_global, override_stop, dst_addr);
+		}
 	}
 	main_loop_unlock();
 
@@ -670,6 +687,7 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 &color_override_color_args);
 
 	rgb16_args_init(&color_override_remote_color_args.rgb);
+	color_override_remote_color_args.address = arg_str0("a", "address", "address", "Target a specific node");
 	color_override_remote_color_args.duration = arg_int1(NULL, NULL, "duration ms", "Duration of the override in ms");
 	color_override_remote_color_args.end = arg_end(4);
 

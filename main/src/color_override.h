@@ -10,4 +10,5 @@ void color_override_set_enable(bool enable);
 void color_override_set_color(const rgb16_t *rgb);
 void color_override_apply(rgb16_t *rgb);
 void color_override_rx(wireless_packet_t *packet);
-void color_override_tx(const rgb16_t *color, int64_t time_start_global_us, int64_t time_stop_global_us);
+void color_override_tx(const rgb16_t *color, int64_t time_start_global_us, int64_t time_stop_global_us, const uint8_t *address);
+void color_override_broadcast(const rgb16_t *color, int64_t time_start_global_us, int64_t time_stop_global_us);

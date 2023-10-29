@@ -16,6 +16,7 @@ typedef struct color_override_entry {
 
 typedef struct color_override_packet {
 	uint8_t packet_type;
+	wireless_address_t addr;
 	color_override_entry_t entry;
 } __attribute__((packed)) color_override_packet_t;
 
@@ -84,10 +85,13 @@ void color_override_rx(wireless_packet_t *packet) {
 		return;
 	}
 	memcpy(&override_packet, packet->data, sizeof(override_packet));
-	add_override(&override_packet);
+	if (wireless_is_broadcast_address(override_packet.addr) ||
+	    wireless_is_local_address(override_packet.addr)) {
+		add_override(&override_packet);
+	}
 }
 
-void color_override_tx(const rgb16_t *color, int64_t time_start_global_us, int64_t time_stop_global_us) {
+void color_override_tx(const rgb16_t *color, int64_t time_start_global_us, int64_t time_stop_global_us, const uint8_t *address) {
 	color_override_packet_t override_packet = {
 		WIRELESS_PACKET_TYPE_COLOR_OVERRIDE,
 		.entry = {
@@ -96,7 +100,15 @@ void color_override_tx(const rgb16_t *color, int64_t time_start_global_us, int64
 			*color
 		}
 	};
+	memcpy(override_packet.addr, address, sizeof(wireless_address_t));
 
-	add_override(&override_packet);
+	if (wireless_is_broadcast_address(override_packet.addr) ||
+	    wireless_is_local_address(override_packet.addr)) {
+		add_override(&override_packet);
+	}
 	wireless_broadcast((const uint8_t *)&override_packet, sizeof(override_packet));
+}
+
+void color_override_broadcast(const rgb16_t *color, int64_t time_start_global_us, int64_t time_stop_global_us) {
+	color_override_tx(color, time_start_global_us, time_stop_global_us, wireless_get_broadcast_address());
 }
