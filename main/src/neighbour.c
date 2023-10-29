@@ -190,7 +190,9 @@ void neighbour_print_list(void) {
 	//      aa:bb:cc:dd:ee:ff   xxxxxxxxms   xxxxms   -90dBm   100%   65535min        <short hash>    <firmware version>
 	neighbour_t *neigh;
 	int64_t now = esp_timer_get_time();
+	unsigned int num_neighbours = 0;
 	LIST_FOR_EACH_ENTRY(neigh, &neighbours.neighbours, list) {
+		num_neighbours++;
 		bool neigh_status_valid = !!neigh->last_status.packet_type;
 		uint64_t age_ms = now - neigh->last_local_adv_rx_timestamp_us;
 		bool firmware_str_valid = !!neigh->last_static_info.packet_type;
@@ -223,6 +225,7 @@ void neighbour_print_list(void) {
 			       ota_status);
 		}
 	}
+	printf("Have %u neigbours\r\n", num_neighbours);
 }
 
 void neighbour_update_status(const neighbour_t *neigh, const neighbour_status_packet_t *status) {
