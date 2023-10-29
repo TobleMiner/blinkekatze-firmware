@@ -32,6 +32,7 @@
 #include "neighbour_rssi_delay_model.h"
 #include "neighbour_static_info.h"
 #include "neighbour_status.h"
+#include "node_info.h"
 #include "ota.h"
 #include "power_control.h"
 #include "rainbow_fade.h"
@@ -297,6 +298,8 @@ void app_main(void) {
 	status_led_set_strobe(STATUS_LED_RED, 20);
 
 	ESP_ERROR_CHECK(ota_init());
+
+	node_info_init(&gauge);
 
 	shell_init(&bonk);
 
