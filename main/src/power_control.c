@@ -187,3 +187,7 @@ void power_control_set_ignore_power_switch(bool ignore) {
 		config_changed();
 	}
 }
+
+bool power_control_is_powered_off(void) {
+	return power_control.powered_off;
+}

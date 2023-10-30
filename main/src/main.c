@@ -408,6 +408,11 @@ void app_main(void) {
 		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
 		rgb16_t color_rgb = { r, g, b};
 		color_override_apply(&color_rgb);
+		if (power_control_is_powered_off()) {
+			color_rgb.r = 0;
+			color_rgb.g = 0;
+			color_rgb.b = 0;
+		}
 		leds_set_color(led_data + BYTES_RESET, color_rgb.r, color_rgb.g, color_rgb.b);
 
 		xfer.length = dma_buf_len * 8;
