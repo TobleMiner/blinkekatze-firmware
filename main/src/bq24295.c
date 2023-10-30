@@ -12,6 +12,14 @@
 #define REG_TERM_TIMER		0x05
 #define REG_BOOST_THERMAL	0x06
 #define REG_MISC_CTRL		0x07
+#define REG_SYSTEM_STATUS	0x08
+
+typedef enum bq24295_charge_status {
+	BQ24295_CHARGE_STATUS_NOT_CHARGING	= 0,
+	BQ24295_CHARGE_STATUS_PRE_CHARGE	= 1,
+	BQ24295_CHARGE_STATUS_FAST_CHARGING	= 2,
+	BQ24295_CHARGE_STATUS_CHARGE_DONE	= 3,
+} bq24295_charge_status_t;
 
 esp_err_t bq24295_init(bq24295_t *charger, i2c_bus_t *bus) {
 	charger->i2c_bus = bus;
@@ -19,9 +27,13 @@ esp_err_t bq24295_init(bq24295_t *charger, i2c_bus_t *bus) {
 	return ESP_OK;
 }
 
+static esp_err_t bq24295_r(bq24295_t *charger, uint8_t reg, uint8_t *val) {
+	return i2c_bus_read_byte(charger->i2c_bus, BQ24295_ADDRESS, reg, val);
+}
+
 static esp_err_t bq24295_rmw(bq24295_t *charger, uint8_t reg, uint8_t clear, uint8_t set) {
 	uint8_t val;
-	esp_err_t err = i2c_bus_read_byte(charger->i2c_bus, BQ24295_ADDRESS, reg, &val);
+	esp_err_t err = bq24295_r(charger, reg, &val);
 	if (err) {
 		return err;
 	}
@@ -174,4 +186,17 @@ esp_err_t bq24295_set_recharge_threshold(bq24295_t *charger, bq24295_recharge_th
 	default:
 		return ESP_ERR_INVALID_ARG;
 	}
+}
+
+esp_err_t bq24295_is_charging(bq24295_t *charger, bool *is_charging) {
+	uint8_t system_status;
+	esp_err_t err = bq24295_r(charger, REG_SYSTEM_STATUS, &system_status);
+	if (err) {
+		return err;
+	}
+	bq24295_charge_status_t charge_status = (system_status >> 4) & 0x3;
+	*is_charging =
+		(charge_status == BQ24295_CHARGE_STATUS_PRE_CHARGE) ||
+		(charge_status == BQ24295_CHARGE_STATUS_FAST_CHARGING);
+	return ESP_OK;
 }
