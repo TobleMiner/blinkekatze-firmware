@@ -23,6 +23,7 @@ typedef struct power_control {
 	int64_t timestamp_charger_watchdog_reset;
 	shared_config_t shared_cfg;
 	bool shutdown;
+	bool powered_off;
 	bool ignore_power_switch;
 } power_control_t;
 
@@ -47,8 +48,15 @@ esp_err_t power_control_init(bq24295_t *charger) {
 	gpio_set_direction(GPIO_POWER_ON, GPIO_MODE_INPUT);
 	gpio_set_pull_mode(GPIO_POWER_ON, GPIO_PULLDOWN_ONLY);
 
+	// Enable BATFET
+	esp_err_t err = bq24295_set_shutdown(charger, false);
+	if (err) {
+		ESP_LOGE(TAG, "Failed to enable batfet: %d", err);
+		return err;
+	}
+
 	// Reset charger to default settings
-	esp_err_t err = bq24295_reset(charger);
+	err = bq24295_reset(charger);
 	if (err) {
 		ESP_LOGE(TAG, "Failed to reset charger: %d", err);
 		return err;
@@ -126,12 +134,23 @@ static void config_changed(void) {
 void power_control_update() {
 	if (!power_control.ignore_power_switch && !gpio_get_level(GPIO_POWER_ON)) {
 		if (power_control.shutdown) {
-			// Disable watchdog and other timers
-			ESP_ERROR_CHECK(bq24295_set_watchdog_timeout(power_control.charger, BQ24295_WATCHDOG_TIMEOUT_DISABLED));
-			// Disable BATFET
-			ESP_ERROR_CHECK(bq24295_set_shutdown(power_control.charger, true));
+			if (!power_control.powered_off) {
+				ESP_LOGI(TAG, "Shutting down");
+			}
+			bool is_charging;
+			esp_err_t err = bq24295_is_charging(power_control.charger, &is_charging);
+			// Disable BATFET only if we are not charging
+			if (!err && !is_charging) {
+				// Disable watchdog and other timers
+				ESP_ERROR_CHECK(bq24295_set_watchdog_timeout(power_control.charger, BQ24295_WATCHDOG_TIMEOUT_DISABLED));
+				// Disable BATFET
+				ESP_ERROR_CHECK(bq24295_set_shutdown(power_control.charger, true));
+			}
+			power_control.powered_off = true;
 		}
-		ESP_LOGI(TAG, "Shutdown requested");
+		if (!power_control.shutdown) {
+			ESP_LOGI(TAG, "Shutdown requested");
+		}
 		power_control.shutdown = true;
 	} else {
 		power_control.shutdown = false;
