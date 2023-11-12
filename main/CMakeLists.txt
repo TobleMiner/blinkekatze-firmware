@@ -4,6 +4,7 @@ set(srcs
 	src/bq27546.c
 	${BUILD_DIR}/bq27546_inr18650_df.c
 	src/color_override.c
+	src/default_color.c
 	src/fast_hsv2rgb_32bit.c
 	src/futil.c
 	src/i2c_bus.c

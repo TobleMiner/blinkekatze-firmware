@@ -24,6 +24,7 @@
 #include "bq24295.h"
 #include "bq27546.h"
 #include "color_override.h"
+#include "default_color.h"
 #include "embedded_files.h"
 #include "fast_hsv2rgb.h"
 #include "i2c_bus.h"
@@ -311,6 +312,7 @@ void app_main(void) {
 
 		power_control_update();
 
+		default_color_update();
 		bonk_update(&bonk);
 		rainbow_fade_update();
 
@@ -356,6 +358,9 @@ void app_main(void) {
 				case WIRELESS_PACKET_TYPE_POWER_CONTROL:
 					power_control_rx(&packet);
 					break;
+				case WIRELESS_PACKET_TYPE_DEFAULT_COLOR:
+					default_color_rx(&packet);
+					break;
 				default:
 					ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
 				}
@@ -398,6 +403,7 @@ void app_main(void) {
 		squish_update(&squish);
 
 		color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 };
+		default_color_apply(&hsv);
 		rainbow_fade_apply(&hsv);
 		bonk_apply(&bonk, &hsv);
 		squish_apply(&squish, &hsv);

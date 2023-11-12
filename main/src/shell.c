@@ -9,6 +9,7 @@
 #include <argtable3/argtable3.h>
 
 #include "color_override.h"
+#include "default_color.h"
 #include "neighbour.h"
 #include "node_info.h"
 #include "ota.h"
@@ -359,6 +360,37 @@ static int handle_rgb16_args(const rgb16_args_t *args, rgb16_t *color) {
 	return 0;
 }
 
+typedef struct hsv_args {
+	struct arg_int *h;
+	struct arg_int *s;
+	struct arg_int *v;
+} hsv_args_t;
+
+static int handle_hsv_args(const hsv_args_t *args, color_hsv_t *color) {
+	int h = *args->h->ival;
+	if (h < 0 || h > HSV_HUE_MAX) {
+		fprintf(stderr, "Hue must be 0 - %u\r\n", HSV_HUE_MAX);
+		return 1;
+	}
+
+	int s = *args->s->ival;
+	if (s < 0 || s > HSV_SAT_MAX) {
+		fprintf(stderr, "Saturation must be 0 - %u\r\n", HSV_SAT_MAX);
+		return 1;
+	}
+
+	int v = *args->v->ival;
+	if (v < 0 || v > HSV_VAL_MAX) {
+		fprintf(stderr, "Brightness must be 0 - %u\r\n", HSV_VAL_MAX);
+		return 1;
+	}
+
+	color->h = h;
+	color->s = s;
+	color->v = v;
+	return 0;
+}
+
 static struct {
 	rgb16_args_t rgb;
 	struct arg_end *end;
@@ -581,6 +613,30 @@ static int ignore_power_switch(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	hsv_args_t hsv;
+	struct arg_end *end;
+} default_color_args;
+
+static int default_color(int argc, char **argv) {
+	int errors = arg_parse(argc, argv, (void **)&default_color_args);
+	if (errors) {
+		arg_print_errors(stderr, default_color_args.end, argv[0]);
+		return 1;
+	}
+
+	color_hsv_t color;
+	int err = handle_hsv_args(&default_color_args.hsv, &color);
+	if (err) {
+		return err;
+	}
+	main_loop_lock();
+	default_color_set_color(&color);
+	main_loop_unlock();
+
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -612,6 +668,12 @@ static void rgb16_args_init(rgb16_args_t *args) {
 	args->r = arg_int1(NULL, NULL, "r", "Red color portion, 0 - 65535");
 	args->g = arg_int1(NULL, NULL, "g", "Green color portion, 0 - 65535");
 	args->b = arg_int1(NULL, NULL, "b", "Blue color portion, 0 - 65535");
+}
+
+static void hsv_args_init(hsv_args_t *args) {
+	args->h = arg_int1(NULL, NULL, "h", "Hue, 0 - 49151");
+	args->s = arg_int1(NULL, NULL, "s", "Saturation, 0 - 65535");
+	args->v = arg_int1(NULL, NULL, "v", "Brightness, 0 - 65535");
 }
 
 esp_err_t shell_init(bonk_t *bonk_) {
@@ -769,6 +831,14 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 "Enable or disable physical power switch",
 			 ignore_power_switch,
 			 &ignore_power_switch_args);
+
+	hsv_args_init(&default_color_args.hsv);
+	default_color_args.end = arg_end(3);
+
+	ADD_COMMAND_ARGS("default_color",
+			 "Set default color",
+			 default_color,
+			 &default_color_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);
