@@ -29,6 +29,7 @@
 #include "fast_hsv2rgb.h"
 #include "i2c_bus.h"
 #include "lis3dh.h"
+#include "ltr_303als.h"
 #include "neighbour.h"
 #include "neighbour_rssi_delay_model.h"
 #include "neighbour_static_info.h"
@@ -295,6 +296,9 @@ void app_main(void) {
 	}
 	squish_init(&squish, &barometer);
 
+	ltr_303als_t als;
+	ESP_ERROR_CHECK(ltr_303als_init(&als, &i2c_bus));
+
 	status_leds_init();
 	status_led_set_strobe(STATUS_LED_RED, 20);
 
@@ -314,6 +318,7 @@ void app_main(void) {
 
 		default_color_update();
 		bonk_update(&bonk);
+		ltr_303als_update(&als);
 		rainbow_fade_update();
 
 		xSemaphoreTake(main_lock, portMAX_DELAY);
