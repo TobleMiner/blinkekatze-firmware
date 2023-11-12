@@ -782,7 +782,7 @@ esp_err_t shell_init(bonk_t *bonk_) {
 	color_override_color_args.end = arg_end(3);
 
 	ADD_COMMAND_ARGS("color_override_color",
-			 "Set color override color",
+			 "Set local color override color",
 			 color_override_color,
 			 &color_override_color_args);
 
