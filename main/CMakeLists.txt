@@ -24,6 +24,7 @@ set(srcs
 	src/shell.c
 	src/spl06.c
 	src/squish.c
+	src/state_of_charge.c
 	src/status_leds.c
 	src/strutil.c
 	src/tcp_client.c

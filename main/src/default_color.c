@@ -45,6 +45,7 @@ static void config_changed(void) {
 	}
 }
 
+static void default_color_update(void *priv);
 static void default_color_update(void *priv) {
 	if (shared_config_should_tx(&default_color.shared_cfg)) {
 		default_color_tx();

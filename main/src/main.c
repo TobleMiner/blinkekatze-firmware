@@ -40,6 +40,7 @@
 #include "shell.h"
 #include "spl06.h"
 #include "squish.h"
+#include "state_of_charge.h"
 #include "status_leds.h"
 #include "strutil.h"
 #include "uid.h"
@@ -313,6 +314,8 @@ void app_main(void) {
 
 	default_color_init();
 
+	state_of_charge_init(&gauge);
+
 	shell_init(&bonk);
 
 	unsigned loop_interval_ms = 20;
@@ -367,6 +370,9 @@ void app_main(void) {
 					case WIRELESS_PACKET_TYPE_DEFAULT_COLOR:
 						default_color_rx(&packet);
 						break;
+					case WIRELESS_PACKET_TYPE_STATE_OF_CHARGE:
+						state_of_charge_rx(&packet);
+						break;
 					default:
 						ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
 					}
@@ -395,6 +401,7 @@ void app_main(void) {
 			rainbow_fade_apply(&hsv);
 			bonk_apply(&bonk, &hsv);
 			squish_apply(&squish, &hsv);
+			state_of_charge_apply(&hsv);
 			ota_indicate_update(&hsv);
 			uid_apply(&hsv);
 
