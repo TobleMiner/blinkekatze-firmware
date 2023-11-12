@@ -487,7 +487,9 @@ static int bonk(int argc, char **argv) {
 		return 1;
 	}
 
+	main_loop_lock();
 	bonk_set_enable(the_bonk, enable);
+	main_loop_unlock();
 
 	return 0;
 }
@@ -510,7 +512,9 @@ static int bonk_duration(int argc, char **argv) {
 		return 1;
 	}
 
+	main_loop_lock();
 	bonk_set_duration(the_bonk, bonk_duration_ms);
+	main_loop_unlock();
 
 	return 0;
 }
@@ -535,7 +539,9 @@ static int bonk_rssi_delay(int argc, char **argv) {
 		return 1;
 	}
 
+	main_loop_lock();
 	bonk_set_delay_enable(the_bonk, enable);
+	main_loop_unlock();
 
 	return 0;
 }
@@ -558,7 +564,9 @@ static int bonk_rssi_delay_model(int argc, char **argv) {
 		return err;
 	}
 
+	main_loop_lock();
 	bonk_set_rssi_delay_model(the_bonk, &delay_model);
+	main_loop_unlock();
 
 	return 0;
 }
@@ -583,7 +591,9 @@ static int bonk_decay(int argc, char **argv) {
 		return 1;
 	}
 
+	main_loop_lock();
 	bonk_set_decay_enable(the_bonk, enable);
+	main_loop_unlock();
 
 	return 0;
 }
@@ -608,7 +618,9 @@ static int ignore_power_switch(int argc, char **argv) {
 		return 1;
 	}
 
+	main_loop_lock();
 	power_control_set_ignore_power_switch(enable);
+	main_loop_unlock();
 
 	return 0;
 }
