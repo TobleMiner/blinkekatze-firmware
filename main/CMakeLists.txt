@@ -8,6 +8,7 @@ set(srcs
 	src/futil.c
 	src/i2c_bus.c
 	src/lis3dh.c
+	src/ltr_303als.c
 	src/main.c
 	src/neighbour.c
 	src/neighbour_rssi_delay_model.c
