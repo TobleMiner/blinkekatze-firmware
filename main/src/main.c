@@ -311,6 +311,8 @@ void app_main(void) {
 
 	rainbow_fade_init();
 
+	default_color_init();
+
 	shell_init(&bonk);
 
 	unsigned loop_interval_ms = 20;
