@@ -6,6 +6,7 @@
 #include <esp_mac.h>
 #include <esp_timer.h>
 
+#include "scheduler.h"
 #include "util.h"
 
 #define NEIGHBOUR_STATUS_INTERVAL_MS	10000
@@ -13,15 +14,12 @@
 typedef struct neighbour_status {
 	bq27546_t *gauge;
 	int64_t	timestamp_last_status_tx_us;
+	scheduler_task_t update_task;
 } neighbour_status_t;
 
 static const char *TAG = "node_status";
 
 neighbour_status_t neighbour_status = { 0 };
-
-void neighbour_status_init(bq27546_t *battery_gauge) {
-	neighbour_status.gauge = battery_gauge;
-}
 
 void neighbour_status_rx(const wireless_packet_t *packet, const neighbour_t *neigh) {
 	if (packet->len < sizeof(neighbour_status_packet_t)) {
@@ -49,7 +47,7 @@ void neighbour_status_rx(const wireless_packet_t *packet, const neighbour_t *nei
 	}
 }
 
-esp_err_t neighbour_status_update(void) {
+static esp_err_t neighbour_status_update_(void) {
 	int64_t now = esp_timer_get_time();
 	esp_err_t err = ESP_OK;
 	if (now > neighbour_status.timestamp_last_status_tx_us + MS_TO_US(NEIGHBOUR_STATUS_INTERVAL_MS)) {
@@ -68,4 +66,16 @@ esp_err_t neighbour_status_update(void) {
 	}
 
 	return err;
+}
+
+static void neighbour_status_update(void *arg);
+static void neighbour_status_update(void *arg) {
+	neighbour_status_update_();
+	scheduler_schedule_task_relative(&neighbour_status.update_task, neighbour_status_update, NULL, MS_TO_US(5000));
+}
+
+void neighbour_status_init(bq27546_t *battery_gauge) {
+	neighbour_status.gauge = battery_gauge;
+	scheduler_task_init(&neighbour_status.update_task);
+	scheduler_schedule_task_relative(&neighbour_status.update_task, neighbour_status_update, NULL, 0);
 }

@@ -7,6 +7,7 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 
+#include "scheduler.h"
 #include "shared_config.h"
 #include "util.h"
 
@@ -18,6 +19,7 @@ typedef struct rainbow_fade {
 	bool enable_phase_shift;
 	neighbour_rssi_delay_model_t delay_model;
 	shared_config_t shared_cfg;
+	scheduler_task_t update_task;
 } rainbow_fade_t;
 
 #define FLAG_ENABLE		BIT(0)
@@ -73,10 +75,17 @@ static void config_changed(void) {
 	}
 }
 
-void rainbow_fade_update() {
+static void rainbow_fade_update(void *priv);
+static void rainbow_fade_update(void *priv) {
 	if (shared_config_should_tx(&rainbow_fade.shared_cfg)) {
 		rainbow_fade_tx();
 	}
+	scheduler_schedule_task_relative(&rainbow_fade.update_task, rainbow_fade_update, NULL, MS_TO_US(1000));
+}
+
+void rainbow_fade_init() {
+	scheduler_task_init(&rainbow_fade.update_task);
+	scheduler_schedule_task_relative(&rainbow_fade.update_task, rainbow_fade_update, NULL, MS_TO_US(1000));
 }
 
 void rainbow_fade_apply(color_hsv_t *color) {

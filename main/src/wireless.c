@@ -9,6 +9,8 @@
 #include <esp_timer.h>
 #include <nvs_flash.h>
 
+#include "main.h"
+
 #define WIRELESS_RX_QUEUE_SIZE		 8
 
 static const char *TAG = "wireless";
@@ -42,6 +44,7 @@ static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int da
 			ESP_LOGW(TAG, "RX queue overflow. Dropping packet");
 		} else {
 			ESP_LOGD(TAG, "Packet queued, %u bytes", packet.len);
+			post_event(EVENT_WIRELESS);
 		}
 	}
 }

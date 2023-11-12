@@ -32,11 +32,6 @@ static const neighbour_rssi_delay_model_t squish_delay_model = {
 	-90
 };
 
-void squish_init(squish_t *squish, spl06_t *baro) {
-	memset(squish, 0, sizeof(*squish));
-	squish->baro = baro;
-}
-
 static uint16_t squish_calculate_remote(squish_t *squish) {
 	uint16_t squishedness = 0;
 	int64_t now = esp_timer_get_time();
@@ -86,7 +81,7 @@ static void squish_tx_delayed(squish_t *squish) {
 	}
 }
 
-esp_err_t squish_update(squish_t *squish) {
+static esp_err_t squish_update_(squish_t *squish) {
 	esp_err_t err = spl06_update(squish->baro);
 	if (err) {
 		ESP_LOGE(TAG, "Failed to update barometer: %d", err);
@@ -138,6 +133,20 @@ esp_err_t squish_update(squish_t *squish) {
 	squish->squishedness = MAX(squish->local_squishedness, squish_calculate_remote(squish));
 	squish->timestamp_last_update_us = now;
 	return ESP_OK;
+}
+
+static void squish_update(void *arg);
+static void squish_update(void *arg) {
+	squish_t *squish = arg;
+	squish_update_(squish);
+	scheduler_schedule_task_relative(&squish->update_task, squish_update, squish, MS_TO_US(20));
+}
+
+void squish_init(squish_t *squish, spl06_t *baro) {
+	memset(squish, 0, sizeof(*squish));
+	squish->baro = baro;
+	scheduler_task_init(&squish->update_task);
+	scheduler_schedule_task_relative(&squish->update_task, squish_update, squish, MS_TO_US(100));
 }
 
 void squish_apply(const squish_t *squish, color_hsv_t *color) {

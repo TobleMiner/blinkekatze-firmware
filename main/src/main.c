@@ -5,9 +5,6 @@
 #include <string.h>
 #include <inttypes.h>
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
 #include <esp_log.h>
@@ -34,10 +31,12 @@
 #include "neighbour_rssi_delay_model.h"
 #include "neighbour_static_info.h"
 #include "neighbour_status.h"
+#include "main.h"
 #include "node_info.h"
 #include "ota.h"
 #include "power_control.h"
 #include "rainbow_fade.h"
+#include "scheduler.h"
 #include "shell.h"
 #include "spl06.h"
 #include "squish.h"
@@ -190,26 +189,71 @@ static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
 	}
 }
 
-lis3dh_t accelerometer;
-static void IRAM_ATTR led_iomux_enable(spi_transaction_t *trans) {
-//	esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
-}
-
-static void IRAM_ATTR led_iomux_disable(spi_transaction_t *trans) {
-//	PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
-}
-
-static SemaphoreHandle_t main_lock;
-static StaticSemaphore_t main_lock_buffer;
-
 static squish_t squish;
 static bonk_t bonk;
 static bool is_rev2 = false;
+static lis3dh_t accelerometer;
+static SemaphoreHandle_t main_lock;
+static StaticSemaphore_t main_lock_buffer;
+static StaticEventGroup_t main_event_group_buffer;
+static EventGroupHandle_t main_event_group;
+
+typedef struct led_update_args {
+	bool *transaction_pending;
+	spi_transaction_t *xfer;
+	size_t dma_buf_len;
+	uint8_t *led_data;
+	spi_device_handle_t dev;
+} led_update_args_t;
+
+static scheduler_task_t led_upate_task;
+
+static void led_update(void *arg);
+static void led_update(void *arg) {
+	led_update_args_t *args = arg;
+
+	color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 };
+	default_color_apply(&hsv);
+	rainbow_fade_apply(&hsv);
+	bonk_apply(&bonk, &hsv);
+	squish_apply(&squish, &hsv);
+	ota_indicate_update(&hsv);
+	uid_apply(&hsv);
+
+	uint16_t r, g, b;
+	fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
+	rgb16_t color_rgb = { r, g, b};
+	color_override_apply(&color_rgb);
+	if (power_control_is_powered_off()) {
+		color_rgb.r = 0;
+		color_rgb.g = 0;
+		color_rgb.b = 0;
+	}
+	leds_set_color(args->led_data + BYTES_RESET, color_rgb.r, color_rgb.g, color_rgb.b);
+
+	args->xfer->length = args->dma_buf_len * 8;
+	args->xfer->rxlength = 0;
+	args->xfer->tx_buffer = args->led_data;
+	args->xfer->rx_buffer = NULL;
+	if (!is_rev2) {
+		esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
+	}
+	ESP_ERROR_CHECK(spi_device_queue_trans(args->dev, args->xfer, 0));
+	*args->transaction_pending = true;
+
+	status_leds_update();
+
+	scheduler_schedule_task_relative(&led_upate_task, led_update, args, MS_TO_US(10));
+}
+
 void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
 
 	main_lock = xSemaphoreCreateMutexStatic(&main_lock_buffer);
+
+	main_event_group = xEventGroupCreateStatic(&main_event_group_buffer);
+	scheduler_init();
 
 	i2c_bus_t i2c_bus;
 	i2c_bus_init(&i2c_bus, I2C_NUM_0, 0, 2, 100000);
@@ -250,8 +294,6 @@ void app_main(void) {
 		.spics_io_num = -1,
 		.flags = SPI_DEVICE_BIT_LSBFIRST,
 		.queue_size = 1,
-		.pre_cb = led_iomux_enable,
-		.post_cb = led_iomux_disable,
 	};
 	spi_device_handle_t dev;
 	ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &dev_cfg, &dev));
@@ -304,72 +346,92 @@ void app_main(void) {
 
 	ESP_ERROR_CHECK(ota_init());
 
+	neighbour_static_info_init();
 	node_info_init(&gauge);
+
+	rainbow_fade_init();
 
 	shell_init(&bonk);
 
 	unsigned loop_interval_ms = 20;
 	bool transaction_pending = false;
 	uint64_t loops = 0;
+	led_update_args_t update_args = {
+		.transaction_pending = &transaction_pending,
+		.xfer = &xfer,
+		.dma_buf_len = dma_buf_len,
+		.led_data = led_data,
+		.dev = dev
+	};
+	scheduler_task_init(&led_upate_task);
+	scheduler_schedule_task_relative(&led_upate_task, led_update, &update_args, MS_TO_US(10));
 	while (1) {
+		EventBits_t events = xEventGroupWaitBits(main_event_group, EVENTS, pdTRUE, pdFALSE, portMAX_DELAY);
 		int64_t time_loop_start_us = esp_timer_get_time();
-
-		power_control_update();
-
-		default_color_update();
-		bonk_update(&bonk);
-		ltr_303als_update(&als);
-		rainbow_fade_update();
-
 		xSemaphoreTake(main_lock, portMAX_DELAY);
-		neighbour_housekeeping();
-		ota_update();
 
-		wireless_packet_t packet;
-		while (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
-			ESP_LOGD(TAG, "Dequeued packet, size: %u bytes", packet.len);
-			if (packet.len >= 1) {
-				const neighbour_t *neigh = neighbour_find_by_address(packet.src_addr);
-				uint8_t packet_type = packet.data[0];
-				status_led_strobe(STATUS_LED_RED);
-				switch (packet_type) {
-				case WIRELESS_PACKET_TYPE_BONK:
-					bonk_rx(&bonk, &packet, neigh);
-					break;
-				case WIRELESS_PACKET_TYPE_NEIGHBOUR_ADVERTISEMENT:
-					neighbour_rx(&packet);
-					break;
-				case WIRELESS_PACKET_TYPE_NEIGHBOUR_STATUS:
-					neighbour_status_rx(&packet, neigh);
-					break;
-				case WIRELESS_PACKET_TYPE_NEIGHBOUR_STATIC_INFO:
-					neighbour_static_info_rx(&packet, neigh);
-					break;
-				case WIRELESS_PACKET_TYPE_OTA:
-					ota_rx(&packet, neigh);
-					break;
-				case WIRELESS_PACKET_TYPE_UID:
-					uid_rx(&packet);
-					break;
-				case WIRELESS_PACKET_TYPE_SQUISH:
-					squish_rx(&squish, &packet, neigh);
-					break;
-				case WIRELESS_PACKET_TYPE_RAINBOW_FADE:
-					rainbow_fade_rx(&packet);
-					break;
-				case WIRELESS_PACKET_TYPE_COLOR_OVERRIDE:
-					color_override_rx(&packet);
-					break;
-				case WIRELESS_PACKET_TYPE_POWER_CONTROL:
-					power_control_rx(&packet);
-					break;
-				case WIRELESS_PACKET_TYPE_DEFAULT_COLOR:
-					default_color_rx(&packet);
-					break;
-				default:
-					ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
+		if (events & EVENT_WIRELESS) {
+			wireless_packet_t packet;
+			while (xQueueReceive(wireless_get_rx_queue(), &packet, 0)) {
+				ESP_LOGD(TAG, "Dequeued packet, size: %u bytes", packet.len);
+				if (packet.len >= 1) {
+					const neighbour_t *neigh = neighbour_find_by_address(packet.src_addr);
+					uint8_t packet_type = packet.data[0];
+					status_led_strobe(STATUS_LED_RED);
+					switch (packet_type) {
+					case WIRELESS_PACKET_TYPE_BONK:
+						bonk_rx(&bonk, &packet, neigh);
+						break;
+					case WIRELESS_PACKET_TYPE_NEIGHBOUR_ADVERTISEMENT:
+						neighbour_rx(&packet);
+						break;
+					case WIRELESS_PACKET_TYPE_NEIGHBOUR_STATUS:
+						neighbour_status_rx(&packet, neigh);
+						break;
+					case WIRELESS_PACKET_TYPE_NEIGHBOUR_STATIC_INFO:
+						neighbour_static_info_rx(&packet, neigh);
+						break;
+					case WIRELESS_PACKET_TYPE_OTA:
+						ota_rx(&packet, neigh);
+						break;
+					case WIRELESS_PACKET_TYPE_UID:
+						uid_rx(&packet);
+						break;
+					case WIRELESS_PACKET_TYPE_SQUISH:
+						squish_rx(&squish, &packet, neigh);
+						break;
+					case WIRELESS_PACKET_TYPE_RAINBOW_FADE:
+						rainbow_fade_rx(&packet);
+						break;
+					case WIRELESS_PACKET_TYPE_COLOR_OVERRIDE:
+						color_override_rx(&packet);
+						break;
+					case WIRELESS_PACKET_TYPE_POWER_CONTROL:
+						power_control_rx(&packet);
+						break;
+					case WIRELESS_PACKET_TYPE_DEFAULT_COLOR:
+						default_color_rx(&packet);
+						break;
+					default:
+						ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
+					}
 				}
 			}
+		}
+
+		if (events & EVENT_SCHEDULER) {
+			spi_transaction_t *xfer_;
+			if (transaction_pending) {
+				spi_device_get_trans_result(dev, &xfer_, portMAX_DELAY);
+				transaction_pending = false;
+			}
+			if (!is_rev2) {
+				gpio_set_direction(3, GPIO_MODE_OUTPUT);
+				gpio_set_level(3, 0);
+				gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
+			}
+
+			scheduler_run();
 		}
 
 		if (wireless_is_scan_done()) {
@@ -394,64 +456,14 @@ void app_main(void) {
 		}
 		xSemaphoreGive(main_lock);
 
-		spi_transaction_t *xfer_;
-		if (transaction_pending) {
-			spi_device_get_trans_result(dev, &xfer_, portMAX_DELAY);
-			transaction_pending = false;
-		}
-		if (!is_rev2) {
-			gpio_set_direction(3, GPIO_MODE_OUTPUT);
-			gpio_set_level(3, 0);
-			gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
-		}
-
-		squish_update(&squish);
-
-		color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 };
-		default_color_apply(&hsv);
-		rainbow_fade_apply(&hsv);
-		bonk_apply(&bonk, &hsv);
-		squish_apply(&squish, &hsv);
-		ota_indicate_update(&hsv);
-		uid_apply(&hsv);
-
-		uint16_t r, g, b;
-		fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
-		rgb16_t color_rgb = { r, g, b};
-		color_override_apply(&color_rgb);
-		if (power_control_is_powered_off()) {
-			color_rgb.r = 0;
-			color_rgb.g = 0;
-			color_rgb.b = 0;
-		}
-		leds_set_color(led_data + BYTES_RESET, color_rgb.r, color_rgb.g, color_rgb.b);
-
-		xfer.length = dma_buf_len * 8;
-		xfer.rxlength = 0;
-		xfer.tx_buffer = led_data;
-		xfer.rx_buffer = NULL;
-		if (!is_rev2) {
-			esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
-		}
-		ESP_ERROR_CHECK(spi_device_queue_trans(dev, &xfer, 0));
-		transaction_pending = true;
-
-		neighbour_static_info_update();
-		neighbour_status_update();
-
 		if (loops % 500 == 250) {
 			wireless_scan_aps();
 		}
-
-		status_leds_update();
 
 		int64_t time_loop_end_us = esp_timer_get_time();
 		int dt_ms = DIV_ROUND(time_loop_end_us - time_loop_start_us, 1000);
 		if (dt_ms > loop_interval_ms) {
 			ESP_LOGW(TAG, "Can't keep up, update took %d ms", dt_ms);
-			vTaskDelay(pdMS_TO_TICKS(0));
-		} else {
-			vTaskDelay(pdMS_TO_TICKS(loop_interval_ms - dt_ms));
 		}
 		loops++;
 	}
@@ -463,4 +475,8 @@ void main_loop_lock() {
 
 void main_loop_unlock() {
 	xSemaphoreGive(main_lock);
+}
+
+void post_event(EventBits_t bits) {
+	xEventGroupSetBits(main_event_group, bits);
 }

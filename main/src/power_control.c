@@ -10,6 +10,7 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 
+#include "scheduler.h"
 #include "shared_config.h"
 #include "util.h"
 
@@ -25,6 +26,7 @@ typedef struct power_control {
 	bool shutdown;
 	bool powered_off;
 	bool ignore_power_switch;
+	scheduler_task_t update_task;
 } power_control_t;
 
 #define FLAG_IGNORE_POWER_SWITCH	BIT(0)
@@ -38,6 +40,76 @@ typedef struct power_control_packet {
 static const char *TAG = "power_control";
 
 static power_control_t power_control = { 0 };
+
+static void power_control_tx(void) {
+	power_control_packet_t packet = {
+		WIRELESS_PACKET_TYPE_POWER_CONTROL,
+		.flags =
+			(power_control.ignore_power_switch ? FLAG_IGNORE_POWER_SWITCH : 0)
+	};
+	shared_config_hdr_init(&power_control.shared_cfg, &packet.shared_cfg_hdr);
+	wireless_broadcast((const uint8_t *)&packet, sizeof(packet));
+	shared_config_tx_done(&power_control.shared_cfg);
+}
+
+static void config_changed(void) {
+	shared_config_update_local(&power_control.shared_cfg);
+
+	for (int i = 0; i < SHARED_CONFIG_TX_TIMES; i++) {
+		power_control_tx();
+	}
+}
+
+void power_control_rx(const wireless_packet_t *packet) {
+	power_control_packet_t config_packet;
+	if (packet->len < sizeof(config_packet)) {
+		ESP_LOGD(TAG, "Received short packet, expected %u bytes but got only %u bytes",
+		         sizeof(config_packet), packet->len);
+		return;
+	}
+	memcpy(&config_packet, packet->data, sizeof(config_packet));
+
+	if (shared_config_update_remote(&power_control.shared_cfg, &config_packet.shared_cfg_hdr)) {
+		power_control.ignore_power_switch = !!(config_packet.flags & FLAG_IGNORE_POWER_SWITCH);
+	}
+}
+
+static void power_control_update(void *arg) {
+	if (!power_control.ignore_power_switch && !gpio_get_level(GPIO_POWER_ON)) {
+		if (power_control.shutdown) {
+			if (!power_control.powered_off) {
+				ESP_LOGI(TAG, "Shutting down");
+			}
+			bool is_charging;
+			esp_err_t err = bq24295_is_charging(power_control.charger, &is_charging);
+			// Disable BATFET only if we are not charging
+			if (!err && !is_charging) {
+				// Disable watchdog and other timers
+				ESP_ERROR_CHECK(bq24295_set_watchdog_timeout(power_control.charger, BQ24295_WATCHDOG_TIMEOUT_DISABLED));
+				// Disable BATFET
+				ESP_ERROR_CHECK(bq24295_set_shutdown(power_control.charger, true));
+			}
+			power_control.powered_off = true;
+		}
+		if (!power_control.shutdown) {
+			ESP_LOGI(TAG, "Shutdown requested");
+		}
+		power_control.shutdown = true;
+	} else {
+		power_control.shutdown = false;
+	}
+
+	uint64_t now = esp_timer_get_time();
+	uint64_t ms_since_last_watchdog_reset = (now - power_control.timestamp_charger_watchdog_reset) / 1000LL;
+	if (ms_since_last_watchdog_reset >= CHARGER_WATCHDOG_RESET_INTERVAL_MS) {
+		bq24295_watchdog_reset(power_control.charger);
+	}
+
+	if (shared_config_should_tx(&power_control.shared_cfg)) {
+		power_control_tx();
+	}
+	scheduler_schedule_task_relative(&power_control.update_task, power_control_update, NULL, MS_TO_US(100));
+}
 
 esp_err_t power_control_init(bq24295_t *charger) {
 	gpio_reset_pin(GPIO_CHARGE_EN);
@@ -109,76 +181,10 @@ esp_err_t power_control_init(bq24295_t *charger) {
 
 	power_control.charger = charger;
 	power_control.shutdown = false;
+
+	scheduler_task_init(&power_control.update_task);
+	scheduler_schedule_task_relative(&power_control.update_task, power_control_update, NULL, MS_TO_US(100));
 	return ESP_OK;
-}
-
-static void power_control_tx(void) {
-	power_control_packet_t packet = {
-		WIRELESS_PACKET_TYPE_POWER_CONTROL,
-		.flags =
-			(power_control.ignore_power_switch ? FLAG_IGNORE_POWER_SWITCH : 0)
-	};
-	shared_config_hdr_init(&power_control.shared_cfg, &packet.shared_cfg_hdr);
-	wireless_broadcast((const uint8_t *)&packet, sizeof(packet));
-	shared_config_tx_done(&power_control.shared_cfg);
-}
-
-static void config_changed(void) {
-	shared_config_update_local(&power_control.shared_cfg);
-
-	for (int i = 0; i < SHARED_CONFIG_TX_TIMES; i++) {
-		power_control_tx();
-	}
-}
-
-void power_control_update() {
-	if (!power_control.ignore_power_switch && !gpio_get_level(GPIO_POWER_ON)) {
-		if (power_control.shutdown) {
-			if (!power_control.powered_off) {
-				ESP_LOGI(TAG, "Shutting down");
-			}
-			bool is_charging;
-			esp_err_t err = bq24295_is_charging(power_control.charger, &is_charging);
-			// Disable BATFET only if we are not charging
-			if (!err && !is_charging) {
-				// Disable watchdog and other timers
-				ESP_ERROR_CHECK(bq24295_set_watchdog_timeout(power_control.charger, BQ24295_WATCHDOG_TIMEOUT_DISABLED));
-				// Disable BATFET
-				ESP_ERROR_CHECK(bq24295_set_shutdown(power_control.charger, true));
-			}
-			power_control.powered_off = true;
-		}
-		if (!power_control.shutdown) {
-			ESP_LOGI(TAG, "Shutdown requested");
-		}
-		power_control.shutdown = true;
-	} else {
-		power_control.shutdown = false;
-	}
-
-	uint64_t now = esp_timer_get_time();
-	uint64_t ms_since_last_watchdog_reset = (now - power_control.timestamp_charger_watchdog_reset) / 1000LL;
-	if (ms_since_last_watchdog_reset >= CHARGER_WATCHDOG_RESET_INTERVAL_MS) {
-		bq24295_watchdog_reset(power_control.charger);
-	}
-
-	if (shared_config_should_tx(&power_control.shared_cfg)) {
-		power_control_tx();
-	}
-}
-
-void power_control_rx(const wireless_packet_t *packet) {
-	power_control_packet_t config_packet;
-	if (packet->len < sizeof(config_packet)) {
-		ESP_LOGD(TAG, "Received short packet, expected %u bytes but got only %u bytes",
-		         sizeof(config_packet), packet->len);
-		return;
-	}
-	memcpy(&config_packet, packet->data, sizeof(config_packet));
-
-	if (shared_config_update_remote(&power_control.shared_cfg, &config_packet.shared_cfg_hdr)) {
-		power_control.ignore_power_switch = !!(config_packet.flags & FLAG_IGNORE_POWER_SWITCH);
-	}
 }
 
 void power_control_set_ignore_power_switch(bool ignore) {

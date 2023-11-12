@@ -7,12 +7,16 @@
 #include <esp_mac.h>
 #include <esp_timer.h>
 
+#include "scheduler.h"
+#include "util.h"
+
 #define STATIC_INFO_TX_INTERVAL_MS	60000
 
 static const char *TAG = "node_static_info";
 
 typedef struct neighbour_static_info {
 	int64_t last_tx_timestamp;
+	scheduler_task_t update_task;
 } neighbour_static_info_t;
 
 static neighbour_static_info_t neighbour_static_info = { 0 };
@@ -29,7 +33,8 @@ void neighbour_static_info_rx(const wireless_packet_t *packet, const neighbour_t
 	}
 }
 
-void neighbour_static_info_update() {
+static void neighbour_static_info_update(void *arg);
+static void neighbour_static_info_update(void *arg) {
 	int64_t now = esp_timer_get_time();
 	int64_t delta_ms = (now - neighbour_static_info.last_tx_timestamp) / 1000LL;
 	if (delta_ms >= STATIC_INFO_TX_INTERVAL_MS || !neighbour_static_info.last_tx_timestamp) {
@@ -41,6 +46,12 @@ void neighbour_static_info_update() {
 		wireless_broadcast((const uint8_t *)&info, sizeof(info));
 		neighbour_static_info.last_tx_timestamp = now;
 	}
+	scheduler_schedule_task_relative(&neighbour_static_info.update_task, neighbour_static_info_update, NULL, MS_TO_US(30000));
+}
+
+void neighbour_static_info_init(void) {
+	scheduler_task_init(&neighbour_static_info.update_task);
+	scheduler_schedule_task_relative(&neighbour_static_info.update_task, neighbour_static_info_update, NULL, 0);
 }
 
 void neighbour_static_info_get_ap_ssid(const neighbour_t *neigh, char *buf, size_t len) {

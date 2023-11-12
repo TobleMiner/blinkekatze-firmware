@@ -8,6 +8,7 @@
 #include <esp_timer.h>
 
 #include "ota.h"
+#include "scheduler.h"
 #include "status_leds.h"
 #include "util.h"
 #include "wireless.h"
@@ -21,15 +22,10 @@ typedef struct neighbours {
 	int64_t last_adv_timestamp;
 	int64_t local_to_global_time_offset;
 	list_head_t neighbours;
+	scheduler_task_t housekeeping_task;
 } neighbours_t;
 
 static neighbours_t neighbours;
-
-void neighbour_init() {
-	neighbours.last_adv_timestamp = 0;
-	neighbours.local_to_global_time_offset = 0;
-	INIT_LIST_HEAD(neighbours.neighbours);
-}
 
 static neighbour_t *find_neighbour(const uint8_t *address) {
 	neighbour_t *neigh;
@@ -111,7 +107,7 @@ esp_err_t neighbour_rx(const wireless_packet_t *packet) {
 	return neighbour_update(packet->src_addr, packet->rx_timestamp, &adv);
 }
 
-void neighbour_housekeeping() {
+static void neighbour_housekeeping(void *priv) {
 	int64_t now = esp_timer_get_time();
 	int64_t global_clock = get_global_clock(now, NULL);
 	neighbour_t *neigh;
@@ -146,6 +142,16 @@ void neighbour_housekeeping() {
 	} else {
 		status_led_set_blink(STATUS_LED_GREEN, 1000);
 	}
+
+	scheduler_schedule_task_relative(&neighbours.housekeeping_task, neighbour_housekeeping, NULL, MS_TO_US(2000));
+}
+
+void neighbour_init() {
+	neighbours.last_adv_timestamp = 0;
+	neighbours.local_to_global_time_offset = 0;
+	INIT_LIST_HEAD(neighbours.neighbours);
+	scheduler_task_init(&neighbours.housekeeping_task);
+	scheduler_schedule_task_relative(&neighbours.housekeeping_task, neighbour_housekeeping, NULL, MS_TO_US(0));
 }
 
 int64_t neighbour_get_global_clock_and_source(neighbour_t **src) {

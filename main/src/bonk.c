@@ -41,19 +41,6 @@ typedef struct bonk_packet {
 	};
 } __attribute__((packed)) bonk_packet_t;
 
-void bonk_init(bonk_t *bonk, lis3dh_t *accel) {
-	memset(bonk, 0, sizeof(*bonk));
-	bonk->accel = accel;
-	bonk->delay_model.delay_rssi_threshold = -20;
-	bonk->delay_model.delay_rssi_limit = -90;
-	bonk->delay_model.us_delay_per_rssi_step = 10000;
-	bonk->delay_model.delay_limit_us = 0;
-	bonk->bonk_duration_ms = BONK_DURATION_MS;
-	bonk->enable = true;
-	bonk->enable_decay = true;
-	bonk->enable_delay = true;
-}
-
 static void bonk_tx_bonk(int64_t timestamp, uint32_t magnitude) {
 	bonk_packet_t packet = {
 		WIRELESS_PACKET_TYPE_BONK,
@@ -137,7 +124,7 @@ static void update_magnitude(bonk_t *bonk) {
 	bonk->magnitude = magnitude;
 }
 
-esp_err_t bonk_update(bonk_t *bonk) {
+static esp_err_t bonk_update_(bonk_t *bonk) {
 	esp_err_t err = lis3dh_update(bonk->accel);
 	if (err) {
 		ESP_LOGE(TAG, "Failed to update accelerometer: %d", err);
@@ -153,6 +140,29 @@ esp_err_t bonk_update(bonk_t *bonk) {
 	update_magnitude(bonk);
 	config_update(bonk);
 	return ESP_OK;
+}
+
+static void bonk_update(void *priv);
+static void bonk_update(void *priv) {
+	bonk_t *bonk = priv;
+	bonk_update_(bonk);
+	scheduler_schedule_task_relative(&bonk->update_task, bonk_update, bonk, MS_TO_US(20));
+}
+
+void bonk_init(bonk_t *bonk, lis3dh_t *accel) {
+	memset(bonk, 0, sizeof(*bonk));
+	bonk->accel = accel;
+	bonk->delay_model.delay_rssi_threshold = -20;
+	bonk->delay_model.delay_rssi_limit = -90;
+	bonk->delay_model.us_delay_per_rssi_step = 10000;
+	bonk->delay_model.delay_limit_us = 0;
+	bonk->bonk_duration_ms = BONK_DURATION_MS;
+	bonk->enable = true;
+	bonk->enable_decay = true;
+	bonk->enable_delay = true;
+
+	scheduler_task_init(&bonk->update_task);
+	scheduler_schedule_task_relative(&bonk->update_task, bonk_update, bonk, MS_TO_US(100));
 }
 
 static void rx_bonk(bonk_t *bonk, const wireless_packet_t *packet, const bonk_packet_t *bonk_packet, const neighbour_t *neigh) {

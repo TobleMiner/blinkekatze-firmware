@@ -5,11 +5,13 @@
 #include <esp_err.h>
 #include <esp_log.h>
 
+#include "scheduler.h"
 #include "shared_config.h"
 
 typedef struct default_color {
 	color_hsv_t default_color;
 	shared_config_t shared_cfg;
+	scheduler_task_t update_task;
 } default_color_t;
 
 typedef struct default_color_config_packet {
@@ -43,10 +45,16 @@ static void config_changed(void) {
 	}
 }
 
-void default_color_update() {
+static void default_color_update(void *priv) {
 	if (shared_config_should_tx(&default_color.shared_cfg)) {
 		default_color_tx();
 	}
+	scheduler_schedule_task_relative(&default_color.update_task, default_color_update, NULL, MS_TO_US(1000));
+}
+
+void default_color_init() {
+	scheduler_task_init(&default_color.update_task);
+	scheduler_schedule_task_relative(&default_color.update_task, default_color_update, NULL, MS_TO_US(1000));
 }
 
 void default_color_apply(color_hsv_t *color) {

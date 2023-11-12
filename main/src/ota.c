@@ -20,6 +20,7 @@
 
 #include "neighbour.h"
 #include "neighbour_static_info.h"
+#include "scheduler.h"
 #include "tcp_client.h"
 #include "tcp_memory_server.h"
 
@@ -69,6 +70,7 @@ typedef struct ota {
 	tcp_memory_server_t tcp_server;
 	tcp_client_t tcp_client;
 	const esp_partition_t *update_part;
+	scheduler_task_t update_task;
 } ota_t;
 
 typedef enum ota_packet_type {
@@ -107,42 +109,6 @@ static esp_err_t patition_get_image_size(const esp_partition_t *part, size_t *si
 		*size_out = meta.image_len;
 	}
 	return err;
-}
-
-esp_err_t ota_init() {
-	memset(&ota, 0, sizeof(ota));
-	ota.tcp_client_lock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
-	const esp_partition_t *booted_part = esp_ota_get_running_partition();
-	if (!booted_part) {
-		ESP_LOGE(TAG, "Failed to determine booted partition");
-		return ESP_ERR_NOT_FOUND;
-	}
-
-	esp_err_t err = esp_partition_mmap(booted_part, 0, booted_part->size, ESP_PARTITION_MMAP_DATA, &ota.firmware_mmap_ptr, &ota.firmware_mmap_handle);
-	if (err) {
-		return err;
-	}
-
-	err = patition_get_image_size(booted_part, &ota.firmware_size);
-	if (err) {
-		ESP_LOGW(TAG, "Failed to determine actual firmware size, using full partition size");
-		ota.firmware_size = booted_part->size;
-	} else {
-		ESP_LOGI(TAG, "Size of booted image: %lu", (unsigned long)ota.firmware_size);
-	}
-
-	ota.ap_ifindex = wireless_get_ap_ifindex();
-	ota.sta_ifindex = wireless_get_sta_ifindex();
-
-	struct ifreq ifr;
-	lwip_if_indextoname(ota.ap_ifindex, ifr.ifr_name);
-	err = tcp_memory_server_init(&ota.tcp_server, ota.firmware_mmap_ptr, ota.firmware_size, 1337, &ifr);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to initialize TCP update server");
-		return err;
-	}
-
-	return ESP_OK;
 }
 
 static void ota_announce_serve(void) {
@@ -326,7 +292,7 @@ static esp_err_t ota_handle_done(void) {
 	}
 }
 
-esp_err_t ota_update() {
+static esp_err_t ota_update_() {
 	switch (ota.state) {
 	case OTA_STATE_SERVING:
 		ota_announce_serve();
@@ -343,6 +309,51 @@ esp_err_t ota_update() {
 		return ota_handle_done();
 	default:
 	}
+
+	return ESP_OK;
+}
+
+static void ota_update(void *arg);
+static void ota_update(void *arg) {
+	ota_update_();
+	scheduler_schedule_task_relative(&ota.update_task, ota_update, NULL, MS_TO_US(1000));
+}
+
+esp_err_t ota_init() {
+	memset(&ota, 0, sizeof(ota));
+	ota.tcp_client_lock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
+	const esp_partition_t *booted_part = esp_ota_get_running_partition();
+	if (!booted_part) {
+		ESP_LOGE(TAG, "Failed to determine booted partition");
+		return ESP_ERR_NOT_FOUND;
+	}
+
+	esp_err_t err = esp_partition_mmap(booted_part, 0, booted_part->size, ESP_PARTITION_MMAP_DATA, &ota.firmware_mmap_ptr, &ota.firmware_mmap_handle);
+	if (err) {
+		return err;
+	}
+
+	err = patition_get_image_size(booted_part, &ota.firmware_size);
+	if (err) {
+		ESP_LOGW(TAG, "Failed to determine actual firmware size, using full partition size");
+		ota.firmware_size = booted_part->size;
+	} else {
+		ESP_LOGI(TAG, "Size of booted image: %lu", (unsigned long)ota.firmware_size);
+	}
+
+	ota.ap_ifindex = wireless_get_ap_ifindex();
+	ota.sta_ifindex = wireless_get_sta_ifindex();
+
+	struct ifreq ifr;
+	lwip_if_indextoname(ota.ap_ifindex, ifr.ifr_name);
+	err = tcp_memory_server_init(&ota.tcp_server, ota.firmware_mmap_ptr, ota.firmware_size, 1337, &ifr);
+	if (err) {
+		ESP_LOGE(TAG, "Failed to initialize TCP update server");
+		return err;
+	}
+
+	scheduler_task_init(&ota.update_task);
+	scheduler_schedule_task_relative(&ota.update_task, ota_update, NULL, 0);
 
 	return ESP_OK;
 }

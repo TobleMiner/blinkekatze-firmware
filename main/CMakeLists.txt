@@ -19,6 +19,7 @@ set(srcs
 	src/ota.c
 	src/power_control.c
 	src/rainbow_fade.c
+	src/scheduler.c
 	src/shared_config.c
 	src/shell.c
 	src/spl06.c
