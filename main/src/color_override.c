@@ -2,6 +2,7 @@
 
 #include <esp_log.h>
 
+#include "main.h"
 #include "neighbour.h"
 #include "util.h"
 
@@ -92,6 +93,7 @@ void color_override_rx(wireless_packet_t *packet) {
 	if (wireless_is_broadcast_address(override_packet.addr) ||
 	    wireless_is_local_address(override_packet.addr)) {
 		add_override(&override_packet);
+		post_event(EVENT_LED);
 	}
 }
 

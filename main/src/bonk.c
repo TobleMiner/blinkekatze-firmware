@@ -5,6 +5,7 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 
+#include "main.h"
 #include "util.h"
 
 #define BONK_MAX_INTENSITY_THRESHOLD	20000
@@ -200,6 +201,7 @@ void bonk_rx(bonk_t *bonk, const wireless_packet_t *packet, const neighbour_t *n
 	switch (bonk_packet.bonk_packet_type) {
 	case BONK_PACKET_TYPE_BONK:
 		rx_bonk(bonk, packet, &bonk_packet, neigh);
+		post_event(EVENT_LED);
 		break;
 	case BONK_PACKET_TYPE_CONFIG:
 		rx_config(bonk, packet, &bonk_packet);

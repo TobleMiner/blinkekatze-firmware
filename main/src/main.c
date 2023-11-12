@@ -198,52 +198,12 @@ static StaticSemaphore_t main_lock_buffer;
 static StaticEventGroup_t main_event_group_buffer;
 static EventGroupHandle_t main_event_group;
 
-typedef struct led_update_args {
-	bool *transaction_pending;
-	spi_transaction_t *xfer;
-	size_t dma_buf_len;
-	uint8_t *led_data;
-	spi_device_handle_t dev;
-} led_update_args_t;
-
 static scheduler_task_t led_upate_task;
 
 static void led_update(void *arg);
 static void led_update(void *arg) {
-	led_update_args_t *args = arg;
-
-	color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 };
-	default_color_apply(&hsv);
-	rainbow_fade_apply(&hsv);
-	bonk_apply(&bonk, &hsv);
-	squish_apply(&squish, &hsv);
-	ota_indicate_update(&hsv);
-	uid_apply(&hsv);
-
-	uint16_t r, g, b;
-	fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
-	rgb16_t color_rgb = { r, g, b};
-	color_override_apply(&color_rgb);
-	if (power_control_is_powered_off()) {
-		color_rgb.r = 0;
-		color_rgb.g = 0;
-		color_rgb.b = 0;
-	}
-	leds_set_color(args->led_data + BYTES_RESET, color_rgb.r, color_rgb.g, color_rgb.b);
-
-	args->xfer->length = args->dma_buf_len * 8;
-	args->xfer->rxlength = 0;
-	args->xfer->tx_buffer = args->led_data;
-	args->xfer->rx_buffer = NULL;
-	if (!is_rev2) {
-		esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
-	}
-	ESP_ERROR_CHECK(spi_device_queue_trans(args->dev, args->xfer, 0));
-	*args->transaction_pending = true;
-
-	status_leds_update();
-
-	scheduler_schedule_task_relative(&led_upate_task, led_update, args, MS_TO_US(10));
+	post_event(EVENT_LED);
+	scheduler_schedule_task_relative(&led_upate_task, led_update, NULL, MS_TO_US(10));
 }
 
 void app_main(void) {
@@ -356,15 +316,8 @@ void app_main(void) {
 	unsigned loop_interval_ms = 20;
 	bool transaction_pending = false;
 	uint64_t loops = 0;
-	led_update_args_t update_args = {
-		.transaction_pending = &transaction_pending,
-		.xfer = &xfer,
-		.dma_buf_len = dma_buf_len,
-		.led_data = led_data,
-		.dev = dev
-	};
 	scheduler_task_init(&led_upate_task);
-	scheduler_schedule_task_relative(&led_upate_task, led_update, &update_args, MS_TO_US(10));
+	scheduler_schedule_task_relative(&led_upate_task, led_update, NULL, MS_TO_US(10));
 	while (1) {
 		EventBits_t events = xEventGroupWaitBits(main_event_group, EVENTS, pdTRUE, pdFALSE, portMAX_DELAY);
 		int64_t time_loop_start_us = esp_timer_get_time();
@@ -432,6 +385,50 @@ void app_main(void) {
 			}
 
 			scheduler_run();
+		}
+
+		if (events & EVENT_LED) {
+			color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 };
+			default_color_apply(&hsv);
+			rainbow_fade_apply(&hsv);
+			bonk_apply(&bonk, &hsv);
+			squish_apply(&squish, &hsv);
+			ota_indicate_update(&hsv);
+			uid_apply(&hsv);
+
+			uint16_t r, g, b;
+			fast_hsv2rgb_32bit(hsv.h, hsv.s, hsv.v, &r, &g, &b);
+			rgb16_t color_rgb = { r, g, b};
+			color_override_apply(&color_rgb);
+			if (power_control_is_powered_off()) {
+				color_rgb.r = 0;
+				color_rgb.g = 0;
+				color_rgb.b = 0;
+			}
+			spi_transaction_t *xfer_;
+			if (transaction_pending) {
+				spi_device_get_trans_result(dev, &xfer_, portMAX_DELAY);
+				transaction_pending = false;
+			}
+			if (!is_rev2) {
+				gpio_set_direction(3, GPIO_MODE_OUTPUT);
+				gpio_set_level(3, 0);
+				gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
+			}
+
+			leds_set_color(led_data + BYTES_RESET, color_rgb.r, color_rgb.g, color_rgb.b);
+
+			xfer.length = dma_buf_len * 8;
+			xfer.rxlength = 0;
+			xfer.tx_buffer = led_data;
+			xfer.rx_buffer = NULL;
+			if (!is_rev2) {
+				esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
+			}
+			ESP_ERROR_CHECK(spi_device_queue_trans(dev, &xfer, 0));
+			transaction_pending = true;
+
+			status_leds_update();
 		}
 
 		if (wireless_is_scan_done()) {
