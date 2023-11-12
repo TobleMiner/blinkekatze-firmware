@@ -41,15 +41,19 @@ void color_override_set_color(const rgb16_t *rgb) {
 
 const color_override_entry_t *find_active_remote_override(void) {
 	int64_t now_global = neighbour_get_global_clock();
+	int64_t start_max = 0;
+	color_override_entry_t *most_recent_entry = NULL;
 	for (unsigned int i = 0; i < ARRAY_SIZE(color_override.remote_overrides); i++) {
 		color_override_entry_t *entry = &color_override.remote_overrides[i];
 		if (now_global >= entry->timestamp_start_global_us &&
-		    now_global <= entry->timestamp_stop_global_us) {
-			return entry;
+		    now_global <= entry->timestamp_stop_global_us &&
+		    entry->timestamp_start_global_us > start_max) {
+			start_max = entry->timestamp_start_global_us;
+			most_recent_entry = entry;
 		}
 	}
 
-	return NULL;
+	return most_recent_entry;
 }
 
 void color_override_apply(rgb16_t *rgb) {
