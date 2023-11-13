@@ -43,3 +43,4 @@ esp_err_t bq24295_set_boost_voltage(bq24295_t *charger, unsigned int boost_volta
 esp_err_t bq24295_set_battery_low_threshold(bq24295_t *charger, bq24295_battery_low_threshold_t threshold);
 esp_err_t bq24295_set_recharge_threshold(bq24295_t *charger, bq24295_recharge_threshold_t threshold);
 esp_err_t bq24295_is_charging(bq24295_t *charger, bool *is_charging);
+esp_err_t bq24295_is_power_good(bq24295_t *charger, bool *power_good);

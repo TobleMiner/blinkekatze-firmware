@@ -19,12 +19,18 @@
 
 #define CHARGER_WATCHDOG_RESET_INTERVAL_MS	10000
 
+typedef enum power_state {
+	POWER_STATE_ON,
+	POWER_STATE_SOFT_OFF,
+	POWER_STATE_HARD_OFF
+} power_state_t;
+
 typedef struct power_control {
 	bq24295_t *charger;
 	int64_t timestamp_charger_watchdog_reset;
 	shared_config_t shared_cfg;
-	bool shutdown;
-	bool powered_off;
+	bool last_power_switch_state;
+	power_state_t power_state;
 	bool ignore_power_switch;
 	scheduler_task_t update_task;
 } power_control_t;
@@ -75,28 +81,32 @@ void power_control_rx(const wireless_packet_t *packet) {
 }
 
 static void power_control_update(void *arg) {
-	if (!power_control.ignore_power_switch && !gpio_get_level(GPIO_POWER_ON)) {
-		if (power_control.shutdown) {
-			if (!power_control.powered_off) {
-				ESP_LOGI(TAG, "Shutting down");
-			}
-			bool is_charging;
-			esp_err_t err = bq24295_is_charging(power_control.charger, &is_charging);
-			// Disable BATFET only if we are not charging
-			if (!err && !is_charging) {
+	bool power_switch_state = gpio_get_level(GPIO_POWER_ON) || power_control.ignore_power_switch;
+	switch (power_control.power_state) {
+	case POWER_STATE_ON:
+		if (!power_switch_state && !power_control.last_power_switch_state) {
+			power_control.power_state = POWER_STATE_SOFT_OFF;
+		}
+		break;
+	case POWER_STATE_SOFT_OFF:
+		if (power_switch_state && power_control.last_power_switch_state) {
+			power_control.power_state = POWER_STATE_ON;
+		} else {
+			bool power_good;
+			esp_err_t err = bq24295_is_power_good(power_control.charger, &power_good);
+			if (!err && !power_good) {
 				// Disable watchdog and other timers
 				ESP_ERROR_CHECK(bq24295_set_watchdog_timeout(power_control.charger, BQ24295_WATCHDOG_TIMEOUT_DISABLED));
 				// Disable BATFET
 				ESP_ERROR_CHECK(bq24295_set_shutdown(power_control.charger, true));
+				power_control.power_state = POWER_STATE_HARD_OFF;
 			}
-			power_control.powered_off = true;
 		}
-		if (!power_control.shutdown) {
-			ESP_LOGI(TAG, "Shutdown requested");
+		break;
+	case POWER_STATE_HARD_OFF:
+		if (power_switch_state && power_control.last_power_switch_state) {
+			power_control.power_state = POWER_STATE_ON;
 		}
-		power_control.shutdown = true;
-	} else {
-		power_control.shutdown = false;
 	}
 
 	uint64_t now = esp_timer_get_time();
@@ -109,6 +119,7 @@ static void power_control_update(void *arg) {
 		power_control_tx();
 	}
 	scheduler_schedule_task_relative(&power_control.update_task, power_control_update, NULL, MS_TO_US(100));
+	power_control.last_power_switch_state = power_switch_state;
 }
 
 esp_err_t power_control_init(bq24295_t *charger) {
@@ -180,7 +191,8 @@ esp_err_t power_control_init(bq24295_t *charger) {
 	}
 
 	power_control.charger = charger;
-	power_control.shutdown = false;
+	power_control.power_state = POWER_STATE_ON;
+	power_control.last_power_switch_state = true;
 
 	scheduler_task_init(&power_control.update_task);
 	scheduler_schedule_task_relative(&power_control.update_task, power_control_update, NULL, MS_TO_US(100));
@@ -195,5 +207,5 @@ void power_control_set_ignore_power_switch(bool ignore) {
 }
 
 bool power_control_is_powered_off(void) {
-	return power_control.powered_off;
+	return power_control.power_state != POWER_STATE_ON;
 }

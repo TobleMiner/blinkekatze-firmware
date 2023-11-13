@@ -25,6 +25,12 @@ typedef enum bq24295_charge_status {
 	BQ24295_CHARGE_STATUS_CHARGE_DONE	= 3,
 } bq24295_charge_status_t;
 
+typedef enum bq24295_vbus_status {
+	BQ24295_VBUS_STATUS_UNKNWON		= 0,
+	BQ24295_VBUS_STATUS_USB_HOST		= 1,
+	BQ24295_VBUS_STATUS_ADAPTER_PORT	= 2,
+	BQ24295_VBUS_STATUS_OTG			= 3,
+} bq24295_vbus_status_t;
 
 const char *TAG = "bq24295";
 
@@ -218,5 +224,15 @@ esp_err_t bq24295_is_charging(bq24295_t *charger, bool *is_charging) {
 	*is_charging =
 		(charge_status == BQ24295_CHARGE_STATUS_PRE_CHARGE) ||
 		(charge_status == BQ24295_CHARGE_STATUS_FAST_CHARGING);
+	return ESP_OK;
+}
+
+esp_err_t bq24295_is_power_good(bq24295_t *charger, bool *power_good) {
+	uint8_t system_status;
+	esp_err_t err = bq24295_r(charger, REG_SYSTEM_STATUS, &system_status);
+	if (err) {
+		return err;
+	}
+	*power_good = !!((system_status >> 2) & 0x1);
 	return ESP_OK;
 }
