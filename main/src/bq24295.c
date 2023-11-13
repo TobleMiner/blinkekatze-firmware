@@ -1,5 +1,8 @@
 #include "bq24295.h"
 
+#include <esp_err.h>
+#include <esp_log.h>
+
 #include "util.h"
 
 #define BQ24295_ADDRESS	0x6B
@@ -13,6 +16,7 @@
 #define REG_BOOST_THERMAL	0x06
 #define REG_MISC_CTRL		0x07
 #define REG_SYSTEM_STATUS	0x08
+#define REG_VENDOR		0x0a
 
 typedef enum bq24295_charge_status {
 	BQ24295_CHARGE_STATUS_NOT_CHARGING	= 0,
@@ -21,14 +25,30 @@ typedef enum bq24295_charge_status {
 	BQ24295_CHARGE_STATUS_CHARGE_DONE	= 3,
 } bq24295_charge_status_t;
 
-esp_err_t bq24295_init(bq24295_t *charger, i2c_bus_t *bus) {
-	charger->i2c_bus = bus;
 
-	return ESP_OK;
-}
+const char *TAG = "bq24295";
 
 static esp_err_t bq24295_r(bq24295_t *charger, uint8_t reg, uint8_t *val) {
 	return i2c_bus_read_byte(charger->i2c_bus, BQ24295_ADDRESS, reg, val);
+}
+
+esp_err_t bq24295_init(bq24295_t *charger, i2c_bus_t *bus) {
+	charger->i2c_bus = bus;
+
+	uint8_t device_id;
+	esp_err_t err = bq24295_r(charger, REG_VENDOR, &device_id);
+	if (err) {
+		ESP_LOGE(TAG, "Failed to read device id register: %d", err);
+		return err;
+	}
+
+	if (device_id != 0xc0) {
+		ESP_LOGE(TAG, "Unsupported device id 0x%02x", device_id);
+		return ESP_ERR_NOT_SUPPORTED;
+	}
+
+	ESP_LOGI(TAG, "Found BQ24295 @0x%02x", BQ24295_ADDRESS);
+	return ESP_OK;
 }
 
 static esp_err_t bq24295_rmw(bq24295_t *charger, uint8_t reg, uint8_t clear, uint8_t set) {

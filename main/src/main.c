@@ -278,7 +278,7 @@ void app_main(void) {
 //	i2c_detect(&i2c_bus);
 
 	bq24295_t charger;
-	bq24295_init(&charger, &i2c_bus);
+	ESP_ERROR_CHECK(bq24295_init(&charger, &i2c_bus));
 
 	ESP_ERROR_CHECK(power_control_init(&charger));
 
