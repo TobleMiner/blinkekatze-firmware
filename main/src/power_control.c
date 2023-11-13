@@ -10,6 +10,7 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 
+#include "debounce.h"
 #include "scheduler.h"
 #include "shared_config.h"
 #include "util.h"
@@ -29,7 +30,8 @@ typedef struct power_control {
 	bq24295_t *charger;
 	int64_t timestamp_charger_watchdog_reset;
 	shared_config_t shared_cfg;
-	bool last_power_switch_state;
+	debounce_bool_t power_switch_debounce;
+	debounce_bool_t power_good_debounce;
 	power_state_t power_state;
 	bool ignore_power_switch;
 	scheduler_task_t update_task;
@@ -82,19 +84,22 @@ void power_control_rx(const wireless_packet_t *packet) {
 
 static void power_control_update(void *arg) {
 	bool power_switch_state = gpio_get_level(GPIO_POWER_ON) || power_control.ignore_power_switch;
+	debounce_bool_update(&power_control.power_switch_debounce, power_switch_state);
 	switch (power_control.power_state) {
 	case POWER_STATE_ON:
-		if (!power_switch_state && !power_control.last_power_switch_state) {
+		if (debounce_bool_get_value(&power_control.power_switch_debounce) == DEBOUNCE_FALSE) {
+			debounce_bool_reset(&power_control.power_good_debounce);
 			power_control.power_state = POWER_STATE_SOFT_OFF;
 		}
 		break;
 	case POWER_STATE_SOFT_OFF:
-		if (power_switch_state && power_control.last_power_switch_state) {
+		if (debounce_bool_get_value(&power_control.power_switch_debounce) == DEBOUNCE_TRUE) {
 			power_control.power_state = POWER_STATE_ON;
-		} else {
+		} else if (debounce_bool_get_value(&power_control.power_switch_debounce) == DEBOUNCE_FALSE) {
 			bool power_good;
 			esp_err_t err = bq24295_is_power_good(power_control.charger, &power_good);
-			if (!err && !power_good) {
+			if (!err && debounce_bool_update(&power_control.power_good_debounce, power_good) &&
+			    debounce_bool_get_value(&power_control.power_good_debounce) == DEBOUNCE_FALSE) {
 				// Disable watchdog and other timers
 				ESP_ERROR_CHECK(bq24295_set_watchdog_timeout(power_control.charger, BQ24295_WATCHDOG_TIMEOUT_DISABLED));
 				// Disable BATFET
@@ -104,7 +109,7 @@ static void power_control_update(void *arg) {
 		}
 		break;
 	case POWER_STATE_HARD_OFF:
-		if (power_switch_state && power_control.last_power_switch_state) {
+		if (debounce_bool_get_value(&power_control.power_switch_debounce) == DEBOUNCE_TRUE) {
 			power_control.power_state = POWER_STATE_ON;
 		}
 	}
@@ -118,8 +123,7 @@ static void power_control_update(void *arg) {
 	if (shared_config_should_tx(&power_control.shared_cfg)) {
 		power_control_tx();
 	}
-	scheduler_schedule_task_relative(&power_control.update_task, power_control_update, NULL, MS_TO_US(100));
-	power_control.last_power_switch_state = power_switch_state;
+	scheduler_schedule_task_relative(&power_control.update_task, power_control_update, NULL, MS_TO_US(250));
 }
 
 esp_err_t power_control_init(bq24295_t *charger) {
@@ -192,7 +196,8 @@ esp_err_t power_control_init(bq24295_t *charger) {
 
 	power_control.charger = charger;
 	power_control.power_state = POWER_STATE_ON;
-	power_control.last_power_switch_state = true;
+	debounce_bool_init(&power_control.power_switch_debounce, 3);
+	debounce_bool_init(&power_control.power_good_debounce, 5);
 
 	scheduler_task_init(&power_control.update_task);
 	scheduler_schedule_task_relative(&power_control.update_task, power_control_update, NULL, MS_TO_US(100));
