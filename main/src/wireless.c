@@ -1,23 +1,45 @@
 #include "wireless.h"
 
+#include <stdbool.h>
 #include <string.h>
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #include <esp_log.h>
 #include <esp_mac.h>
 #include <esp_netif.h>
 #include <esp_random.h>
 #include <esp_timer.h>
+#include <mbedtls/md.h>
 #include <nvs_flash.h>
 
+#include "chacha20.h"
 #include "main.h"
 
-#define WIRELESS_RX_QUEUE_SIZE		 8
+#define WIRELESS_RX_QUEUE_SIZE		8
+#define WIRELESS_HMAC_CTX_CNT		3
 
 static const char *TAG = "wireless";
 
 static const uint8_t wireless_broadcast_address[ESP_NOW_ETH_ALEN] = {
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 };
+
+static const uint8_t wireless_encryption_key[32] = {
+	0x13, 0x54, 0xb9, 0xce, 0x84, 0x3a, 0xc4, 0x63,
+	0x9f, 0xf9, 0xf8, 0x4a, 0xc7, 0x00, 0x9f, 0xc8,
+	0x1b, 0xe5, 0xe8, 0x94, 0x7c, 0x9a, 0x23, 0xf8,
+	0xf0, 0x30, 0x43, 0x19, 0x9e, 0xa5, 0xce, 0x18
+};
+static uint32_t wireless_random_id;
+static uint32_t wireless_packet_tx_cnt = 0;
+
+static mbedtls_md_context_t wireless_hmac_ctx[WIRELESS_HMAC_CTX_CNT];
+static bool wireless_hmac_map[WIRELESS_HMAC_CTX_CNT] = { 0 };
+static SemaphoreHandle_t wireless_hmac_lock;
+static StaticSemaphore_t wireless_hmac_lock_buffer;
+static portMUX_TYPE wireless_hmac_spinlock = portMUX_INITIALIZER_UNLOCKED;
 
 static char ap_password[WIRELESS_AP_PASSWORD_LENGTH + 1] = { 0 };
 
@@ -28,23 +50,104 @@ static esp_netif_t *ap_netif = NULL;
 static esp_netif_t *sta_netif = NULL;
 static uint8_t ap_mac_address[ESP_NOW_ETH_ALEN];
 
+typedef struct wireless_packet_hdr {
+	union {
+		struct {
+			int32_t timestamp;
+			uint32_t packet_cnt;
+			uint32_t random_id;
+		};
+		uint8_t data[12];
+	} nonce;
+	uint8_t short_hmac[8];
+} wireless_packet_hdr_t;
+
+static int hmac_take(void) {
+	int idx = -1;
+	xSemaphoreTake(wireless_hmac_lock, portMAX_DELAY);
+	taskENTER_CRITICAL(&wireless_hmac_spinlock);
+	for (int i = 0; i < WIRELESS_HMAC_CTX_CNT; i++) {
+		if (!wireless_hmac_map[i]) {
+			wireless_hmac_map[i] = true;
+			idx = i;
+			break;
+		}
+	}
+	taskEXIT_CRITICAL(&wireless_hmac_spinlock);
+	return idx;
+}
+
+static void hmac_put(int hmac_idx) {
+	taskENTER_CRITICAL(&wireless_hmac_spinlock);
+	wireless_hmac_map[hmac_idx] = false;
+	taskEXIT_CRITICAL(&wireless_hmac_spinlock);
+	xSemaphoreGive(wireless_hmac_lock);
+}
+
+static void hmac_ctx_init(void) {
+	for (int i = 0; i < WIRELESS_HMAC_CTX_CNT; i++) {
+		mbedtls_md_context_t *hmac = &wireless_hmac_ctx[i];
+		mbedtls_md_init(hmac);
+		mbedtls_md_setup(hmac, mbedtls_md_info_from_type(MBEDTLS_MD_SHA1), 1);
+		mbedtls_md_hmac_starts(hmac, wireless_encryption_key, sizeof(wireless_encryption_key));
+	}
+	wireless_hmac_lock = xSemaphoreCreateCountingStatic(WIRELESS_HMAC_CTX_CNT, WIRELESS_HMAC_CTX_CNT, &wireless_hmac_lock_buffer);
+}
+
+static void packet_generate_hmac(uint8_t *dst, const uint8_t *src, size_t len) {
+	int idx = hmac_take();
+	ESP_ERROR_CHECK(idx < 0);
+	mbedtls_md_context_t *hmac = &wireless_hmac_ctx[idx];
+	mbedtls_md_hmac_update(hmac, ap_mac_address, sizeof(ap_mac_address));
+	mbedtls_md_hmac_update(hmac, src, len);
+	mbedtls_md_hmac_finish(hmac, dst);
+	mbedtls_md_hmac_reset(hmac);
+	hmac_put(idx);
+}
+
+static bool packet_validate_hmac(const uint8_t *data, size_t data_len, const uint8_t *peer_address, const wireless_packet_hdr_t *hdr) {
+	int idx = hmac_take();
+	ESP_ERROR_CHECK(idx < 0);
+	mbedtls_md_context_t *hmac = &wireless_hmac_ctx[idx];
+	mbedtls_md_hmac_update(hmac, peer_address, ESP_NOW_ETH_ALEN);
+	mbedtls_md_hmac_update(hmac, data, data_len);
+	uint8_t digest[20];
+	mbedtls_md_hmac_finish(hmac, digest);
+	mbedtls_md_hmac_reset(hmac);
+	hmac_put(idx);
+	return !memcmp(digest, hdr->short_hmac, sizeof(hdr->short_hmac));
+}
+
+static void packet_crypt(uint8_t *dst, const uint8_t *src, size_t len, const wireless_packet_hdr_t *hdr) {
+	chacha20_ctx_t chacha20;
+	chacha20_init(&chacha20, wireless_encryption_key, hdr->nonce.data, 0);
+	chacha20_xor(&chacha20, dst, src, len);
+}
+
 static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int data_len) {
 	int64_t rx_timestamp = esp_timer_get_time();
 
 	ESP_LOGD(TAG, "Received %d bytes", data_len);
-	if (data_len <= WIRELESS_MAX_PACKET_SIZE) {
+	if (data_len <= WIRELESS_MAX_PACKET_SIZE && data_len >= sizeof(wireless_packet_hdr_t)) {
 		wireless_packet_t packet = {
-			.rx_timestamp = rx_timestamp,
-			.len = data_len
+			.rx_timestamp = rx_timestamp
 		};
-		memcpy(packet.src_addr, info->src_addr, sizeof(packet.src_addr));
-		memcpy(packet.data, data, data_len);
+		wireless_packet_hdr_t hdr;
+		memcpy(&hdr, data, sizeof(wireless_packet_hdr_t));
+		const uint8_t *payload = data + sizeof(wireless_packet_hdr_t);
+		size_t payload_len = data_len - sizeof(wireless_packet_hdr_t);
+		packet_crypt(packet.data, payload, payload_len, &hdr);
+		bool is_valid = packet_validate_hmac(packet.data, payload_len, info->src_addr, &hdr);
+		if (is_valid) {
+			packet.len = payload_len;
+			memcpy(packet.src_addr, info->src_addr, sizeof(packet.src_addr));
 
-		if (xQueueSend(rx_queue, &packet, 0) != pdTRUE) {
-			ESP_LOGW(TAG, "RX queue overflow. Dropping packet");
-		} else {
-			ESP_LOGD(TAG, "Packet queued, %u bytes", packet.len);
-			post_event(EVENT_WIRELESS);
+			if (xQueueSend(rx_queue, &packet, 0) != pdTRUE) {
+				ESP_LOGW(TAG, "RX queue overflow. Dropping packet");
+			} else {
+				ESP_LOGD(TAG, "Packet queued, %u bytes", packet.len);
+				post_event(EVENT_WIRELESS);
+			}
 		}
 	}
 }
@@ -189,6 +292,9 @@ esp_err_t wireless_init() {
 		return err;
 	}
 
+	wireless_random_id = esp_random();
+	hmac_ctx_init();
+
 	rx_queue = xQueueCreate(WIRELESS_RX_QUEUE_SIZE, sizeof(wireless_packet_t));
 	if (!rx_queue) {
 		return ESP_ERR_NO_MEM;
@@ -198,7 +304,24 @@ esp_err_t wireless_init() {
 }
 
 esp_err_t wireless_broadcast(const uint8_t *data, size_t len) {
-	return esp_now_send(wireless_broadcast_address, data, len);
+	union {
+		struct {
+			wireless_packet_hdr_t hdr;
+			uint8_t payload[WIRELESS_MAX_PACKET_SIZE];
+		};
+		uint8_t data[sizeof(wireless_packet_hdr_t) + WIRELESS_MAX_PACKET_SIZE];
+	} packet;
+	packet.hdr.nonce.timestamp = esp_timer_get_time() >> 10;
+	packet.hdr.nonce.packet_cnt = wireless_packet_tx_cnt++;
+	packet.hdr.nonce.random_id = wireless_random_id;
+
+	packet_crypt(packet.payload, data, len, &packet.hdr);
+
+	uint8_t hmac[20];
+	packet_generate_hmac(hmac, data, len);
+	memcpy(packet.hdr.short_hmac, hmac, sizeof(packet.hdr.short_hmac));
+
+	return esp_now_send(wireless_broadcast_address, packet.data, sizeof(wireless_packet_hdr_t) + len);
 }
 
 QueueHandle_t wireless_get_rx_queue() {

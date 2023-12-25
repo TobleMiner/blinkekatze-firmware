@@ -3,6 +3,7 @@ set(srcs
 	src/bq24295.c
 	src/bq27546.c
 	${BUILD_DIR}/bq27546_inr18650_df.c
+	src/chacha20.c
 	src/color_override.c
 	src/debounce.c
 	src/default_color.c
