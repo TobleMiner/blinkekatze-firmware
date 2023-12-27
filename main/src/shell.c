@@ -677,6 +677,31 @@ static int soc_display(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_str *enable;
+	struct arg_end *end;
+} wireless_encryption_args;
+
+static int wireless_encryption(int argc, char **argv) {
+	wireless_encryption_args.enable->sval[0] = "";
+	int errors = arg_parse(argc, argv, (void **)&wireless_encryption_args);
+	if (errors) {
+		arg_print_errors(stderr, wireless_encryption_args.end, argv[0]);
+		return 1;
+	}
+
+	bool enable;
+	int err = parse_on_off(wireless_encryption_args.enable->sval[0], &enable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", wireless_encryption_args.enable->sval[0]);
+		return 1;
+	}
+
+	wireless_set_encryption_enable(enable);
+
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -884,9 +909,17 @@ esp_err_t shell_init(bonk_t *bonk_) {
 	soc_display_args.end = arg_end(1);
 
 	ADD_COMMAND_ARGS("soc_display",
-			 "Enable or disabe SOC display",
+			 "Enable or disable SOC display",
 			 soc_display,
 			 &soc_display_args);
+
+	wireless_encryption_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable wireless encryption");
+	wireless_encryption_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("wireless_encryption",
+			 "Enable or disable wireless encryption",
+			 wireless_encryption,
+			 &wireless_encryption_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);

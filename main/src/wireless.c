@@ -1,6 +1,5 @@
 #include "wireless.h"
 
-#include <stdbool.h>
 #include <string.h>
 
 #include <freertos/FreeRTOS.h>
@@ -35,6 +34,7 @@ static const uint8_t wireless_encryption_key[32] = {
 static uint32_t wireless_random_id;
 static uint32_t wireless_packet_tx_cnt = 0;
 
+static bool wireless_encryption_enabled = true;
 static mbedtls_md_context_t wireless_hmac_ctx[WIRELESS_HMAC_CTX_CNT];
 static bool wireless_hmac_map[WIRELESS_HMAC_CTX_CNT] = { 0 };
 static SemaphoreHandle_t wireless_hmac_lock;
@@ -124,30 +124,56 @@ static void packet_crypt(uint8_t *dst, const uint8_t *src, size_t len, const wir
 	chacha20_xor(&chacha20, dst, src, len);
 }
 
-static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int data_len) {
-	int64_t rx_timestamp = esp_timer_get_time();
-
-	ESP_LOGD(TAG, "Received %d bytes", data_len);
-	if (data_len <= WIRELESS_MAX_PACKET_SIZE && data_len >= sizeof(wireless_packet_hdr_t)) {
-		wireless_packet_t packet = {
-			.rx_timestamp = rx_timestamp
-		};
+static bool rx_packet_encrypted(wireless_packet_t *packet, const esp_now_recv_info_t *info, const uint8_t *data, int data_len) {
+	if (data_len >= sizeof(wireless_packet_hdr_t) &&
+	    data_len <= WIRELESS_MAX_PACKET_SIZE - sizeof(wireless_packet_hdr_t)) {
 		wireless_packet_hdr_t hdr;
 		memcpy(&hdr, data, sizeof(wireless_packet_hdr_t));
 		const uint8_t *payload = data + sizeof(wireless_packet_hdr_t);
 		size_t payload_len = data_len - sizeof(wireless_packet_hdr_t);
-		packet_crypt(packet.data, payload, payload_len, &hdr);
-		bool is_valid = packet_validate_hmac(packet.data, payload_len, info->src_addr, &hdr);
+		packet_crypt(packet->data, payload, payload_len, &hdr);
+		bool is_valid = packet_validate_hmac(packet->data, payload_len, info->src_addr, &hdr);
 		if (is_valid) {
-			packet.len = payload_len;
-			memcpy(packet.src_addr, info->src_addr, sizeof(packet.src_addr));
+			packet->len = payload_len;
+			return true;
+		}
+	}
 
-			if (xQueueSend(rx_queue, &packet, 0) != pdTRUE) {
-				ESP_LOGW(TAG, "RX queue overflow. Dropping packet");
-			} else {
-				ESP_LOGD(TAG, "Packet queued, %u bytes", packet.len);
-				post_event(EVENT_WIRELESS);
-			}
+	return false;
+}
+
+static bool rx_packet_plain(wireless_packet_t *packet, const uint8_t *data, int data_len) {
+	if (data_len > 0 && data_len <= WIRELESS_MAX_PACKET_SIZE) {
+		memcpy(packet->data, data, data_len);
+		packet->len = data_len;
+		return true;
+	}
+
+	return false;
+}
+
+static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int data_len) {
+	int64_t rx_timestamp = esp_timer_get_time();
+
+	ESP_LOGD(TAG, "Received %d bytes", data_len);
+	wireless_packet_t packet = {
+		.rx_timestamp = rx_timestamp
+	};
+
+	bool packet_valid;
+	if (wireless_encryption_enabled) {
+		packet_valid = rx_packet_encrypted(&packet, info, data, data_len);
+	} else {
+		packet_valid = rx_packet_plain(&packet, data, data_len);
+	}
+
+	if (packet_valid) {
+		memcpy(packet.src_addr, info->src_addr, sizeof(packet.src_addr));
+		if (xQueueSend(rx_queue, &packet, 0) != pdTRUE) {
+			ESP_LOGW(TAG, "RX queue overflow. Dropping packet");
+		} else {
+			ESP_LOGD(TAG, "Packet queued, %u bytes", packet.len);
+			post_event(EVENT_WIRELESS);
 		}
 	}
 }
@@ -303,7 +329,7 @@ esp_err_t wireless_init() {
 	return esp_now_register_recv_cb(recv_cb);
 }
 
-esp_err_t wireless_broadcast(const uint8_t *data, size_t len) {
+static esp_err_t broadcast_encrypted(const uint8_t *data, size_t len) {
 	union {
 		struct {
 			wireless_packet_hdr_t hdr;
@@ -322,6 +348,14 @@ esp_err_t wireless_broadcast(const uint8_t *data, size_t len) {
 	memcpy(packet.hdr.short_hmac, hmac, sizeof(packet.hdr.short_hmac));
 
 	return esp_now_send(wireless_broadcast_address, packet.data, sizeof(wireless_packet_hdr_t) + len);
+}
+
+esp_err_t wireless_broadcast(const uint8_t *data, size_t len) {
+	if (wireless_encryption_enabled) {
+		return broadcast_encrypted(data, len);
+	} else {
+		return esp_now_send(wireless_broadcast_address, data, len);
+	}
 }
 
 QueueHandle_t wireless_get_rx_queue() {
@@ -416,4 +450,8 @@ bool wireless_is_broadcast_address(const uint8_t *addr) {
 
 bool wireless_is_local_address(const uint8_t *addr) {
 	return !memcmp(addr, ap_mac_address, sizeof(ap_mac_address));
+}
+
+void wireless_set_encryption_enable(bool enable) {
+	wireless_encryption_enabled = enable;
 }
