@@ -211,6 +211,9 @@ void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
 
+	settings_init();
+	usb_init();
+
 	main_lock = xSemaphoreCreateMutexStatic(&main_lock_buffer);
 
 	main_event_group = xEventGroupCreateStatic(&main_event_group_buffer);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -26,7 +27,8 @@ typedef enum wireless_packet_type {
 	WIRELESS_PACKET_TYPE_COLOR_OVERRIDE = 8,
 	WIRELESS_PACKET_TYPE_POWER_CONTROL = 9,
 	WIRELESS_PACKET_TYPE_DEFAULT_COLOR = 10,
-	WIRELESS_PACKET_TYPE_STATE_OF_CHARGE = 11
+	WIRELESS_PACKET_TYPE_STATE_OF_CHARGE = 11,
+	WIRELESS_PACKET_TYPE_USB_CONFIG = 12
 } wireless_packet_type_t;
 
 typedef uint8_t wireless_address_t[ESP_NOW_ETH_ALEN];
@@ -57,3 +59,4 @@ const uint8_t *wireless_get_mac_address(void);
 const uint8_t *wireless_get_broadcast_address(void);
 bool wireless_is_broadcast_address(const uint8_t *addr);
 bool wireless_is_local_address(const uint8_t *addr);
+void wireless_set_encryption_enable(bool enable);
