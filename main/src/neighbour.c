@@ -13,7 +13,7 @@
 #include "util.h"
 #include "wireless.h"
 
-#define NEIGHBOUR_TTL_US		10000000UL
+#define NEIGHBOUR_TTL_US		30000000UL
 #define NEIGHBOUR_ADV_INTERVAL_US	 3000000UL
 
 static const char *TAG = "neighbour";
@@ -192,8 +192,8 @@ bool neighbour_has_neighbours(void) {
 
 void neighbour_print_list(void) {
 	printf("Address             Uptime       Age      RSSI     SoC    Time to empty   Firmware hash   Firmware version   OTA status\r\n");
-	printf("=======================================================================================================================\r\n");
-	//      aa:bb:cc:dd:ee:ff   xxxxxxxxms   xxxxms   -90dBm   100%   65535min        <short hash>    <firmware version>
+	printf("========================================================================================================================\r\n");
+	//      aa:bb:cc:dd:ee:ff   xxxxxxxxms   xxxxxms  -90dBm   100%   65535min        <short hash>    <firmware version>
 	neighbour_t *neigh;
 	int64_t now = esp_timer_get_time();
 	unsigned int num_neighbours = 0;
@@ -209,7 +209,7 @@ void neighbour_print_list(void) {
 			char firmware_hash_str[12 + 1] = { 0 };
 			hex_encode(neigh->last_static_info.firmware_sha256_hash, sizeof(neigh->last_static_info.firmware_sha256_hash),
 				   firmware_hash_str, sizeof(firmware_hash_str) - 1);
-			printf(MACSTR"   %8lums   %4lums   %2ddBm   %3d%%   %5dmin        %-13s   %-16.*s   %s\r\n",
+			printf(MACSTR"   %8lums   %5lums   %2ddBm   %3d%%   %5dmin        %-13s   %-16.*s   %s\r\n",
 			       MAC2STR(neigh->address),
 			       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
 			       (unsigned long)(age_ms / 1000ULL),
@@ -221,7 +221,7 @@ void neighbour_print_list(void) {
 			       firmware_str_valid ? firmware_str : "???",
 			       ota_status);
 		} else {
-			printf(MACSTR"   %8lums   %4lums   %2ddBm   ???       ???         ???            %-16.*s   %s\r\n",
+			printf(MACSTR"   %8lums   %5lums   %2ddBm   ???       ???         ???            %-16.*s   %s\r\n",
 			       MAC2STR(neigh->address),
 			       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
 			       (unsigned long)(age_ms / 1000ULL),

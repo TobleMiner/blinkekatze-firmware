@@ -37,6 +37,7 @@
 #include "power_control.h"
 #include "rainbow_fade.h"
 #include "scheduler.h"
+#include "settings.h"
 #include "shell.h"
 #include "spl06.h"
 #include "squish.h"
@@ -44,6 +45,7 @@
 #include "status_leds.h"
 #include "strutil.h"
 #include "uid.h"
+#include "usb.h"
 #include "util.h"
 #include "wireless.h"
 
@@ -211,10 +213,13 @@ void app_main(void) {
 	gpio_reset_pin(0);
 	gpio_reset_pin(2);
 
+	settings_init();
+
 	main_lock = xSemaphoreCreateMutexStatic(&main_lock_buffer);
 
 	main_event_group = xEventGroupCreateStatic(&main_event_group_buffer);
 	scheduler_init();
+	usb_init();
 
 	i2c_bus_t i2c_bus;
 	i2c_bus_init(&i2c_bus, I2C_NUM_0, 0, 2, 100000);
@@ -372,6 +377,9 @@ void app_main(void) {
 						break;
 					case WIRELESS_PACKET_TYPE_STATE_OF_CHARGE:
 						state_of_charge_rx(&packet);
+						break;
+					case WIRELESS_PACKET_TYPE_USB_CONFIG:
+						usb_config_rx(&packet);
 						break;
 					default:
 						ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);

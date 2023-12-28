@@ -17,11 +17,13 @@ set(srcs
 	src/neighbour_rssi_delay_model.c
 	src/neighbour_static_info.c
 	src/neighbour_status.c
+	src/nvs.c
 	src/node_info.c
 	src/ota.c
 	src/power_control.c
 	src/rainbow_fade.c
 	src/scheduler.c
+	src/settings.c
 	src/shared_config.c
 	src/shell.c
 	src/spl06.c
@@ -32,6 +34,7 @@ set(srcs
 	src/tcp_client.c
 	src/tcp_memory_server.c
 	src/uid.c
+	src/usb.c
 	src/util.c
 	src/wireless.c)
 

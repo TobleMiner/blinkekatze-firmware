@@ -17,6 +17,7 @@
 #include "rainbow_fade.h"
 #include "state_of_charge.h"
 #include "uid.h"
+#include "usb.h"
 #include "util.h"
 
 static const char *TAG = "repl";
@@ -702,6 +703,65 @@ static int wireless_encryption(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_str *disable;
+	struct arg_end *end;
+} usb_disable_args;
+
+static int usb_disable(int argc, char **argv) {
+	usb_disable_args.disable->sval[0] = "";
+	int errors = arg_parse(argc, argv, (void **)&usb_disable_args);
+	if (errors) {
+		arg_print_errors(stderr, usb_disable_args.end, argv[0]);
+		return 1;
+	}
+
+	bool disable;
+	int err = parse_on_off(usb_disable_args.disable->sval[0], &disable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", usb_disable_args.disable->sval[0]);
+		return 1;
+	}
+
+	main_loop_lock();
+	usb_set_enable(!disable);
+	main_loop_unlock();
+
+	return 0;
+}
+
+static struct {
+	struct arg_str *enable;
+	struct arg_end *end;
+} usb_enable_override_args;
+
+static int usb_enable_override(int argc, char **argv) {
+	usb_enable_override_args.enable->sval[0] = "";
+	int errors = arg_parse(argc, argv, (void **)&usb_enable_override_args);
+	if (errors) {
+		arg_print_errors(stderr, usb_enable_override_args.end, argv[0]);
+		return 1;
+	}
+
+	if (usb_enable_override_args.enable->sval[0] && strlen(usb_enable_override_args.enable->sval[0])) {
+		bool enable;
+		int err = parse_on_off(usb_enable_override_args.enable->sval[0], &enable);
+		if (err) {
+			fprintf(stderr, "'%s' is neither on nor off\r\n", usb_enable_override_args.enable->sval[0]);
+			return 1;
+		}
+
+		main_loop_lock();
+		usb_set_enable_override(enable);
+		main_loop_unlock();
+	} else {
+		bool enable = usb_is_enable_overriden();
+		printf("USB enable override is %s\n", enable ? "enabled" : "disabled");
+	}
+
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -920,6 +980,22 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 "Enable or disable wireless encryption",
 			 wireless_encryption,
 			 &wireless_encryption_args);
+
+	usb_enable_override_args.enable = arg_str0(NULL, NULL, "on|off", "Disable/enable USB enable override");
+	usb_enable_override_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("usb_enable_override",
+			 "Enable or disable local USB port enable override",
+			 usb_enable_override,
+			 &usb_enable_override_args);
+
+	usb_disable_args.disable = arg_str1(NULL, NULL, "on|off", "Disable/enable USB enable override");
+	usb_disable_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("usb_disable",
+			 "Enable or disable local USB port enable override",
+			 usb_disable,
+			 &usb_disable_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);
