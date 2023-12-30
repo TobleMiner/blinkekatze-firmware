@@ -724,6 +724,10 @@ static int usb_disable(int argc, char **argv) {
 	}
 
 	main_loop_lock();
+	if (disable && !usb_is_enable_overriden()) {
+		fprintf(stderr, "WARNING: USB override not enabled, enabling it now!\r\n");
+		usb_set_enable_override(true);
+	}
 	usb_set_enable(!disable);
 	main_loop_unlock();
 
