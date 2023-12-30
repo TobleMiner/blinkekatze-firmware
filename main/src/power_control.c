@@ -117,6 +117,7 @@ static void power_control_update(void *arg) {
 	uint64_t now = esp_timer_get_time();
 	uint64_t ms_since_last_watchdog_reset = (now - power_control.timestamp_charger_watchdog_reset) / 1000LL;
 	if (ms_since_last_watchdog_reset >= CHARGER_WATCHDOG_RESET_INTERVAL_MS) {
+		bq24295_set_input_current_limit(power_control.charger, 1500);
 		bq24295_watchdog_reset(power_control.charger);
 	}
 
@@ -164,7 +165,7 @@ esp_err_t power_control_init(bq24295_t *charger) {
 		return err;
 	}
 	// Set input current limit to 1A
-	err = bq24295_set_input_current_limit(charger, 1000);
+	err = bq24295_set_input_current_limit(charger, 1500);
 	if (err) {
 		ESP_LOGE(TAG, "Failed to set input current limit: %d", err);
 		return err;
