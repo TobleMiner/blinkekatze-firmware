@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
 #include <esp_log.h>
 #include <esp_mac.h>
 #include <esp_timer.h>
@@ -23,6 +26,8 @@ typedef struct neighbours {
 	int64_t local_to_global_time_offset;
 	list_head_t neighbours;
 	scheduler_task_t housekeeping_task;
+	neighbour_t *clock_source;
+	portMUX_TYPE lock;
 } neighbours_t;
 
 static neighbours_t neighbours;
@@ -55,24 +60,30 @@ static int64_t get_global_clock_us(const neighbour_t *neigh, int64_t now) {
 }
 
 static int64_t get_global_clock(int64_t now, neighbour_t **src) {
-	int64_t max_uptime = now;
 	int64_t global_clock = now + neighbours.local_to_global_time_offset;
-	neighbour_t *neigh_src = NULL;
 
+	if (neighbours.clock_source) {
+		global_clock = get_global_clock_us(neighbours.clock_source, now);
+	}
+	if (src) {
+		*src = neighbours.clock_source;
+	}
+	return global_clock;
+}
+
+static void update_clock_source(void) {
+	int64_t now = esp_timer_get_time();
+	int64_t max_uptime = now;
 	neighbour_t *neigh;
+	neighbour_t *neigh_src = NULL;
 	LIST_FOR_EACH_ENTRY(neigh, &neighbours.neighbours, list) {
 		int64_t uptime = get_uptime_us(neigh, now);
 		if (uptime > max_uptime) {
-			global_clock = get_global_clock_us(neigh, now);
 			max_uptime = uptime;
 			neigh_src = neigh;
 		}
 	}
-
-	if (src) {
-		*src = neigh_src;
-	}
-	return global_clock;
+	neighbours.clock_source = neigh_src;
 }
 
 esp_err_t neighbour_update(const uint8_t *address, int64_t timestamp_us, const neighbour_advertisement_t *adv) {
@@ -86,11 +97,14 @@ esp_err_t neighbour_update(const uint8_t *address, int64_t timestamp_us, const n
 		INIT_LIST_HEAD(neigh->list);
 		memcpy(neigh->address, address, sizeof(neigh->address));
 		neigh->local_to_remote_time_offset = 0;
+		taskENTER_CRITICAL(&neighbours.lock);
 		LIST_APPEND(&neigh->list, &neighbours.neighbours);
+		taskEXIT_CRITICAL(&neighbours.lock);
 	}
 
 	neigh->last_local_adv_rx_timestamp_us = timestamp_us;
 	neigh->last_advertisement = *adv;
+	update_clock_source();
 
 	return ESP_OK;
 }
@@ -117,7 +131,13 @@ static void neighbour_housekeeping(void *priv) {
 		int64_t age = now - neigh->last_local_adv_rx_timestamp_us;
 		if (age > NEIGHBOUR_TTL_US) {
 			ESP_LOGI(TAG, "Neighbour "MACSTR" TTL exceeded, deleting", MAC2STR(neigh->address));
+			taskENTER_CRITICAL(&neighbours.lock);
 			LIST_DELETE(&neigh->list);
+			if (neigh == neighbours.clock_source) {
+				neighbours.clock_source = NULL;
+				update_clock_source();
+			}
+			taskEXIT_CRITICAL(&neighbours.lock);
 			free(neigh);
 		} else {
 			neigh->local_to_remote_time_offset = now - get_uptime_us(neigh, now);
@@ -149,6 +169,7 @@ static void neighbour_housekeeping(void *priv) {
 void neighbour_init() {
 	neighbours.last_adv_timestamp = 0;
 	neighbours.local_to_global_time_offset = 0;
+	neighbours.lock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
 	INIT_LIST_HEAD(neighbours.neighbours);
 	scheduler_task_init(&neighbours.housekeeping_task);
 	scheduler_schedule_task_relative(&neighbours.housekeeping_task, neighbour_housekeeping, NULL, MS_TO_US(0));
@@ -160,7 +181,10 @@ int64_t neighbour_get_global_clock_and_source(neighbour_t **src) {
 }
 
 int64_t neighbour_get_global_clock() {
-	return neighbour_get_global_clock_and_source(NULL);
+	taskENTER_CRITICAL(&neighbours.lock);
+	int64_t clock = neighbour_get_global_clock_and_source(NULL);
+	taskEXIT_CRITICAL(&neighbours.lock);
+	return clock;
 }
 
 esp_err_t neighbour_update_rssi(const uint8_t *address, int rssi) {
