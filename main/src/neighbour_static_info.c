@@ -35,7 +35,7 @@ void neighbour_static_info_rx(const wireless_packet_t *packet, const neighbour_t
 
 static void neighbour_static_info_update(void *arg);
 static void neighbour_static_info_update(void *arg) {
-	int64_t now = esp_timer_get_time();
+	int64_t now = neighbour_get_global_clock();
 	int64_t delta_ms = (now - neighbour_static_info.last_tx_timestamp) / 1000LL;
 	if (delta_ms >= STATIC_INFO_TX_INTERVAL_MS || !neighbour_static_info.last_tx_timestamp) {
 		neighbour_static_info_packet_t info = { .packet_type = WIRELESS_PACKET_TYPE_NEIGHBOUR_STATIC_INFO };
@@ -46,7 +46,7 @@ static void neighbour_static_info_update(void *arg) {
 		wireless_broadcast((const uint8_t *)&info, sizeof(info));
 		neighbour_static_info.last_tx_timestamp = now;
 	}
-	scheduler_schedule_task_relative(&neighbour_static_info.update_task, neighbour_static_info_update, NULL, MS_TO_US(30000));
+	scheduler_schedule_task_relative(&neighbour_static_info.update_task, neighbour_static_info_update, NULL, MS_TO_US(1000));
 }
 
 void neighbour_static_info_init(void) {

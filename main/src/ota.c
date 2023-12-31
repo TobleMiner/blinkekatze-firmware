@@ -112,7 +112,7 @@ static esp_err_t patition_get_image_size(const esp_partition_t *part, size_t *si
 }
 
 static void ota_announce_serve(void) {
-	int64_t now = esp_timer_get_time();
+	int64_t now = neighbour_get_global_clock();
 	int32_t delta_ms = (now - ota.last_tx_timestamp_us) / 1000;
 	if (delta_ms >= OTA_UPDATE_SERVE_INTERVAL_MS || !ota.last_tx_timestamp_us) {
 		ota_packet_t ota_packet = { 0 };

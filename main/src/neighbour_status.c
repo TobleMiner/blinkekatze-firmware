@@ -48,7 +48,7 @@ void neighbour_status_rx(const wireless_packet_t *packet, const neighbour_t *nei
 }
 
 static esp_err_t neighbour_status_update_(void) {
-	int64_t now = esp_timer_get_time();
+	int64_t now = neighbour_get_global_clock();
 	esp_err_t err = ESP_OK;
 	if (now > neighbour_status.timestamp_last_status_tx_us + MS_TO_US(NEIGHBOUR_STATUS_INTERVAL_MS)) {
 		neighbour_status_packet_t status = { .packet_type = WIRELESS_PACKET_TYPE_NEIGHBOUR_STATUS };
@@ -71,7 +71,7 @@ static esp_err_t neighbour_status_update_(void) {
 static void neighbour_status_update(void *arg);
 static void neighbour_status_update(void *arg) {
 	neighbour_status_update_();
-	scheduler_schedule_task_relative(&neighbour_status.update_task, neighbour_status_update, NULL, MS_TO_US(5000));
+	scheduler_schedule_task_relative(&neighbour_status.update_task, neighbour_status_update, NULL, MS_TO_US(1000));
 }
 
 void neighbour_status_init(bq27546_t *battery_gauge) {
