@@ -12,8 +12,10 @@
 #include <esp_timer.h>
 #include <mbedtls/md.h>
 #include <nvs_flash.h>
+#include <sdkconfig.h>
 
 #include "chacha20.h"
+#include "embedded_files.h"
 #include "main.h"
 
 #define WIRELESS_RX_QUEUE_SIZE		8
@@ -25,12 +27,7 @@ static const uint8_t wireless_broadcast_address[ESP_NOW_ETH_ALEN] = {
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 };
 
-static const uint8_t wireless_encryption_key[32] = {
-	0x13, 0x54, 0xb9, 0xce, 0x84, 0x3a, 0xc4, 0x63,
-	0x9f, 0xf9, 0xf8, 0x4a, 0xc7, 0x00, 0x9f, 0xc8,
-	0x1b, 0xe5, 0xe8, 0x94, 0x7c, 0x9a, 0x23, 0xf8,
-	0xf0, 0x30, 0x43, 0x19, 0x9e, 0xa5, 0xce, 0x18
-};
+static const uint8_t *wireless_encryption_key = EMBEDDED_FILE_PTR(wireless_key);
 static uint32_t wireless_random_id;
 static uint32_t wireless_packet_tx_cnt = 0;
 
@@ -89,7 +86,7 @@ static void hmac_ctx_init(void) {
 		mbedtls_md_context_t *hmac = &wireless_hmac_ctx[i];
 		mbedtls_md_init(hmac);
 		mbedtls_md_setup(hmac, mbedtls_md_info_from_type(MBEDTLS_MD_SHA1), 1);
-		mbedtls_md_hmac_starts(hmac, wireless_encryption_key, sizeof(wireless_encryption_key));
+		mbedtls_md_hmac_starts(hmac, wireless_encryption_key, 32);
 	}
 	wireless_hmac_lock = xSemaphoreCreateCountingStatic(WIRELESS_HMAC_CTX_CNT, WIRELESS_HMAC_CTX_CNT, &wireless_hmac_lock_buffer);
 }
@@ -250,16 +247,19 @@ esp_err_t wireless_init() {
 		return err;
 	}
 
+#ifdef CONFIG_BK_WLAN_REG
 	wifi_country_t country = {
-		.cc = { 'J', 'P', 0 },
+		.cc = { 0 },
 		.schan = 1,
 		.nchan = 14,
 		.policy = WIFI_COUNTRY_POLICY_MANUAL
 	};
+	strncpy(country.cc, CONFIG_BK_WLAN_REG_CODE, sizeof(country.cc));
 	err = esp_wifi_set_country(&country);
 	if (err) {
 		return err;
 	}
+#endif
 
 	err = esp_wifi_get_mac(WIFI_IF_AP, ap_mac_address);
 	if (err) {
@@ -270,7 +270,7 @@ esp_err_t wireless_init() {
 		.ap = {
 			.ssid = { 0 },
 			.password = { 0 },
-			.channel = 14,
+			.channel = CONFIG_BK_WLAN_CHANNEL,
 			.authmode = WIFI_AUTH_WPA2_PSK,
 			.max_connection = 8,
 			.beacon_interval = 500
@@ -289,7 +289,7 @@ esp_err_t wireless_init() {
 		return err;
 	}
 
-	err = esp_wifi_set_channel(14, WIFI_SECOND_CHAN_NONE);
+	err = esp_wifi_set_channel(CONFIG_BK_WLAN_CHANNEL, WIFI_SECOND_CHAN_NONE);
 	if (err) {
 		return err;
 	}
@@ -307,7 +307,7 @@ esp_err_t wireless_init() {
 	}
 
 	esp_now_peer_info_t bcast_peer = {
-		.channel = 14,
+		.channel = CONFIG_BK_WLAN_CHANNEL,
 		.ifidx = WIFI_IF_AP,
 		.encrypt = false,
 	};
@@ -364,7 +364,7 @@ QueueHandle_t wireless_get_rx_queue() {
 
 esp_err_t wireless_scan_aps(void) {
 	wifi_scan_config_t scan_cfg = {
-		.channel = 14,
+		.channel = CONFIG_BK_WLAN_CHANNEL,
 		.scan_type = WIFI_SCAN_TYPE_PASSIVE
 	};
 	esp_err_t err = esp_wifi_scan_start(&scan_cfg, false);
@@ -406,7 +406,7 @@ const char *wireless_get_ap_password() {
 esp_err_t wireless_connect_to_ap(wifi_config_t *sta_cfg) {
 	sta_cfg->sta.scan_method = WIFI_FAST_SCAN;
 	sta_cfg->sta.bssid_set = false;
-	sta_cfg->sta.channel = 14;
+	sta_cfg->sta.channel = CONFIG_BK_WLAN_CHANNEL;
 
 	esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, sta_cfg);
 	if (err) {

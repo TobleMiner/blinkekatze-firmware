@@ -625,7 +625,7 @@ CONFIG_RTC_CLOCK_BBPLL_POWER_ON_WITH_USB=y
 #
 # Peripheral Control
 #
-# CONFIG_PERIPH_CTRL_FUNC_IN_IRAM is not set
+CONFIG_PERIPH_CTRL_FUNC_IN_IRAM=y
 # end of Peripheral Control
 
 #
@@ -1401,6 +1401,14 @@ CONFIG_WIFI_PROV_STA_ALL_CHANNEL_SCAN=y
 # CONFIG_WPA_11R_SUPPORT is not set
 # CONFIG_WPA_WPS_SOFTAP_REGISTRAR is not set
 # end of Supplicant
+
+#
+# Blinkekatze
+#
+CONFIG_BK_WLAN_CHANNEL=6
+# CONFIG_BK_WLAN_REG is not set
+CONFIG_BK_WIRELESS_KEY_FILE=y
+# end of Blinkekatze
 # end of Component config
 
 # Deprecated options for backward compatibility

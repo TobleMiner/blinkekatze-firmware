@@ -40,7 +40,7 @@ set(srcs
 
 idf_component_register(SRCS ${srcs}
 		       INCLUDE_DIRS "src"
-		       EMBED_FILES ${BUILD_DIR}/colorcal_16x16x16_12bit.bin ${BUILD_DIR}/colorcal_32x32x32_12bit.bin)
+		       EMBED_FILES ${BUILD_DIR}/colorcal_16x16x16_12bit.bin ${BUILD_DIR}/colorcal_32x32x32_12bit.bin ${PROJECT_DIR}/main/assets/wireless_key)
 
 add_custom_command(OUTPUT ${BUILD_DIR}/bq27546_inr18650_df.c
 		   COMMAND ${PROJECT_DIR}/tools/flash_stream_to_c.py ${CMAKE_CURRENT_LIST_DIR}/assets/bq27546_INR18650-35E.df.fs ${BUILD_DIR}/bq27546_inr18650_df.c bq27546_inr18650_dataflash

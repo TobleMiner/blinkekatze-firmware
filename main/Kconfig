@@ -1,0 +1,26 @@
+menu "Blinkekatze"
+	config BK_WLAN_CHANNEL
+		int "WLAN channel"
+		range 1 14
+		default 6
+
+	config BK_WLAN_REG
+		bool "Override default WLAN country code"
+
+	config BK_WLAN_REG_CODE
+		depends on BK_WLAN_REG
+		string "WLAN country code"
+		default "00"
+
+	choice BK_WIRELESS_KEY
+		prompt "Wireless key"
+		default BK_WIRELESS_KEY_FILE
+
+		config BK_WIRELESS_KEY_FILE
+			bool "Configure through main/assets/wireless_key"
+			help
+			  Point the symlink `main/assets/wireless_key` to any
+			  32 byte file that will then be used as the
+			  encryption and signing key for messages sent wirelessly
+	endchoice
+endmenu
