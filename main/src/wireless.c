@@ -18,10 +18,29 @@
 #include "embedded_files.h"
 #include "main.h"
 #include "neighbour.h"
+#include "util.h"
 
 #define WIRELESS_RX_QUEUE_SIZE		8
 #define WIRELESS_HMAC_CTX_CNT		3
 #define WIRELESS_REPLAY_AGE_LIMIT_MS	100
+#define WIRELESS_REPLAY_BUFFER_SIZE	100
+
+typedef struct wireless_packet_hdr {
+	union {
+		struct {
+			uint32_t timestamp;
+			uint32_t packet_cnt;
+			uint32_t random_id;
+		};
+		uint8_t data[12];
+	} nonce;
+	uint8_t short_hmac[8];
+} wireless_packet_hdr_t;
+
+typedef struct wireless_hmac_entry {
+	int64_t timestamp_ms;
+	uint8_t short_hmac[8];
+} wireless_hmac_entry_t;
 
 static const char *TAG = "wireless";
 
@@ -40,6 +59,9 @@ static bool wireless_hmac_map[WIRELESS_HMAC_CTX_CNT] = { 0 };
 static SemaphoreHandle_t wireless_hmac_lock;
 static StaticSemaphore_t wireless_hmac_lock_buffer;
 static portMUX_TYPE wireless_hmac_spinlock = portMUX_INITIALIZER_UNLOCKED;
+static size_t replay_buffer_read = 0;
+static size_t replay_buffer_write = 0;
+static wireless_hmac_entry_t wireless_replay_buffer[WIRELESS_REPLAY_BUFFER_SIZE] = { 0 };
 
 static char ap_password[WIRELESS_AP_PASSWORD_LENGTH + 1] = { 0 };
 
@@ -49,18 +71,6 @@ static bool sta_connected = false;
 static esp_netif_t *ap_netif = NULL;
 static esp_netif_t *sta_netif = NULL;
 static uint8_t ap_mac_address[ESP_NOW_ETH_ALEN];
-
-typedef struct wireless_packet_hdr {
-	union {
-		struct {
-			uint32_t timestamp;
-			uint32_t packet_cnt;
-			uint32_t random_id;
-		};
-		uint8_t data[12];
-	} nonce;
-	uint8_t short_hmac[8];
-} wireless_packet_hdr_t;
 
 static int hmac_take(void) {
 	int idx = -1;
@@ -113,6 +123,47 @@ static bool packet_validate_timestamp(const wireless_packet_hdr_t *hdr) {
 	return hdr->nonce.timestamp + WIRELESS_REPLAY_AGE_LIMIT_MS > now_ms_ish;
 }
 
+static bool packet_check_replay(const wireless_packet_hdr_t *hdr) {
+	if (!replay_protection_enabled) {
+		return true;
+	}
+
+	int64_t now_ms = esp_timer_get_time() / 1000LL;
+	size_t idx = replay_buffer_read;
+	bool replay_detected = false;
+	while (idx != replay_buffer_write) {
+		wireless_hmac_entry_t *entry = &wireless_replay_buffer[idx];
+		idx++;
+		idx %= ARRAY_SIZE(wireless_replay_buffer);
+
+		int64_t age_ms = now_ms - entry->timestamp_ms;
+		if (age_ms > WIRELESS_REPLAY_AGE_LIMIT_MS) {
+			replay_buffer_read = idx;
+		}
+
+		if (!memcmp(entry->short_hmac, hdr->short_hmac, sizeof(hdr->short_hmac))) {
+			replay_detected = true;
+		}
+	}
+
+	return !replay_detected;
+}
+
+static void push_hmac_to_replay_buffer(const wireless_packet_hdr_t *hdr) {
+	int64_t now_ms = esp_timer_get_time() / 1000LL;
+	wireless_hmac_entry_t entry = {
+		.timestamp_ms = now_ms
+	};
+	memcpy(entry.short_hmac, hdr->short_hmac, sizeof(entry.short_hmac));
+	wireless_replay_buffer[replay_buffer_write] = entry;
+	replay_buffer_write++;
+	replay_buffer_write %= ARRAY_SIZE(wireless_replay_buffer);
+	if (replay_buffer_write == replay_buffer_read) {
+		replay_buffer_read++;
+		replay_buffer_read %= ARRAY_SIZE(wireless_replay_buffer);
+	}
+}
+
 static bool packet_validate_hmac(const uint8_t *data, size_t data_len, const uint8_t *peer_address, const wireless_packet_hdr_t *hdr) {
 	int idx = hmac_take();
 	ESP_ERROR_CHECK(idx < 0);
@@ -141,8 +192,10 @@ static bool rx_packet_encrypted(wireless_packet_t *packet, const esp_now_recv_in
 		size_t payload_len = data_len - sizeof(wireless_packet_hdr_t);
 		packet_crypt(packet->data, payload, payload_len, &hdr);
 		bool is_valid = packet_validate_timestamp(&hdr) &&
+				packet_check_replay(&hdr) &&
 				packet_validate_hmac(packet->data, payload_len, info->src_addr, &hdr);
 		if (is_valid) {
+			push_hmac_to_replay_buffer(&hdr);
 			packet->len = payload_len;
 			return true;
 		}
