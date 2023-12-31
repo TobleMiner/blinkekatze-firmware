@@ -45,7 +45,9 @@ esp_err_t uid_rx(const wireless_packet_t *packet) {
 		 uid_packet.enable ? "enable" : "disable",
 		 MAC2STR(uid_packet.node_address));
 	const uint8_t *mac_address = wireless_get_mac_address();
-	if (!memcmp(mac_address, uid_packet.node_address, sizeof(uid_packet.node_address))) {
+	const uint8_t *bcast_address = wireless_get_broadcast_address();
+	if (!memcmp(mac_address, uid_packet.node_address, sizeof(uid_packet.node_address)) ||
+	    !memcmp(bcast_address, uid_packet.node_address, sizeof(uid_packet.node_address))) {
 		uid_enabled = !!uid_packet.enable;
 	}
 
