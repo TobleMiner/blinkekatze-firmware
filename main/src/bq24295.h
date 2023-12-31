@@ -29,6 +29,7 @@ typedef enum bq24295_recharge_threshold {
 
 esp_err_t bq24295_init(bq24295_t *charger, i2c_bus_t *bus);
 esp_err_t bq24295_set_input_current_limit(bq24295_t *charger, unsigned int current_ma);
+esp_err_t bq24295_get_input_current_limit(bq24295_t *charger, unsigned int *current_ma);
 esp_err_t bq24295_reset(bq24295_t *charger);
 esp_err_t bq24295_set_shutdown(bq24295_t *charger, bool shutdown);
 esp_err_t bq24295_set_otg_enable(bq24295_t *charger, bool enable);

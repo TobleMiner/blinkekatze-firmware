@@ -82,6 +82,20 @@ void power_control_rx(const wireless_packet_t *packet) {
 	}
 }
 
+static void force_input_current_limit(void) {
+	esp_err_t err;
+	unsigned int current_limit_ma;
+	err = bq24295_get_input_current_limit(power_control.charger, &current_limit_ma);
+	if (err) {
+		ESP_LOGW(TAG, "Failed to check input current limit: %d", err);
+		return;
+	}
+
+	if (current_limit_ma != 1500) {
+		bq24295_set_input_current_limit(power_control.charger, 1500);
+	}
+}
+
 static void power_control_update(void *arg) {
 	bool power_switch_state = gpio_get_level(GPIO_POWER_ON) || power_control.ignore_power_switch;
 	debounce_bool_update(&power_control.power_switch_debounce, power_switch_state);
@@ -117,7 +131,7 @@ static void power_control_update(void *arg) {
 	uint64_t now = esp_timer_get_time();
 	uint64_t ms_since_last_watchdog_reset = (now - power_control.timestamp_charger_watchdog_reset) / 1000LL;
 	if (ms_since_last_watchdog_reset >= CHARGER_WATCHDOG_RESET_INTERVAL_MS) {
-		bq24295_set_input_current_limit(power_control.charger, 1500);
+		force_input_current_limit();
 		bq24295_watchdog_reset(power_control.charger);
 	}
 

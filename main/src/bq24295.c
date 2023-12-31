@@ -32,6 +32,10 @@ typedef enum bq24295_vbus_status {
 	BQ24295_VBUS_STATUS_OTG			= 3,
 } bq24295_vbus_status_t;
 
+static const unsigned int bq24295_input_current_lookup_ma[] = {
+	100, 150, 500, 900, 1000, 1500, 2000, 3000
+};
+
 const char *TAG = "bq24295";
 
 static esp_err_t bq24295_r(bq24295_t *charger, uint8_t reg, uint8_t *val) {
@@ -69,28 +73,34 @@ static esp_err_t bq24295_rmw(bq24295_t *charger, uint8_t reg, uint8_t clear, uin
 }
 
 esp_err_t bq24295_set_input_current_limit(bq24295_t *charger, unsigned int current_ma) {
-	if (current_ma < 100) {
-		return ESP_ERR_INVALID_ARG;
-	}
+	uint8_t limit_bits;
+	for (limit_bits = 0; limit_bits < ARRAY_SIZE(bq24295_input_current_lookup_ma); limit_bits++) {
+		unsigned int current_limit_ma = bq24295_input_current_lookup_ma[limit_bits];
 
-	uint8_t limit_bits = 0;
-	if (current_ma >= 3000) {
-		limit_bits = 0x07;
-	} else if (current_ma >= 2000) {
-		limit_bits = 0x06;
-	} else if (current_ma >= 1500) {
-		limit_bits = 0x05;
-	} else if (current_ma >= 1000) {
-		limit_bits = 0x04;
-	} else if (current_ma >= 900) {
-		limit_bits = 0x03;
-	} else if (current_ma >= 500) {
-		limit_bits = 0x02;
-	} else if (current_ma >= 150) {
-		limit_bits = 0x01;
+		if (current_limit_ma > current_ma) {
+			if (!limit_bits) {
+				return ESP_ERR_INVALID_ARG;
+			}
+			limit_bits--;
+			break;
+		} else if (current_limit_ma == current_ma) {
+			break;
+		}
 	}
 
 	return bq24295_rmw(charger, REG_INPUT_CTRL, 0x07, limit_bits);
+}
+
+esp_err_t bq24295_get_input_current_limit(bq24295_t *charger, unsigned int *current_ma) {
+	uint8_t regval;
+	esp_err_t err = bq24295_r(charger, REG_INPUT_CTRL, &regval);
+	if (err) {
+		return err;
+	}
+
+	unsigned int limit_bits = regval & 0x07;
+	*current_ma = bq24295_input_current_lookup_ma[limit_bits];
+	return ESP_OK;
 }
 
 esp_err_t bq24295_reset(bq24295_t *charger) {
