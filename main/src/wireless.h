@@ -60,3 +60,4 @@ const uint8_t *wireless_get_broadcast_address(void);
 bool wireless_is_broadcast_address(const uint8_t *addr);
 bool wireless_is_local_address(const uint8_t *addr);
 void wireless_set_encryption_enable(bool enable);
+void wireless_set_replay_protection_enable(bool enable);

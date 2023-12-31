@@ -17,9 +17,11 @@
 #include "chacha20.h"
 #include "embedded_files.h"
 #include "main.h"
+#include "neighbour.h"
 
 #define WIRELESS_RX_QUEUE_SIZE		8
 #define WIRELESS_HMAC_CTX_CNT		3
+#define WIRELESS_REPLAY_AGE_LIMIT_MS	100
 
 static const char *TAG = "wireless";
 
@@ -32,6 +34,7 @@ static uint32_t wireless_random_id;
 static uint32_t wireless_packet_tx_cnt = 0;
 
 static bool wireless_encryption_enabled = true;
+static bool replay_protection_enabled = true;
 static mbedtls_md_context_t wireless_hmac_ctx[WIRELESS_HMAC_CTX_CNT];
 static bool wireless_hmac_map[WIRELESS_HMAC_CTX_CNT] = { 0 };
 static SemaphoreHandle_t wireless_hmac_lock;
@@ -50,7 +53,7 @@ static uint8_t ap_mac_address[ESP_NOW_ETH_ALEN];
 typedef struct wireless_packet_hdr {
 	union {
 		struct {
-			int32_t timestamp;
+			uint32_t timestamp;
 			uint32_t packet_cnt;
 			uint32_t random_id;
 		};
@@ -102,6 +105,14 @@ static void packet_generate_hmac(uint8_t *dst, const uint8_t *src, size_t len) {
 	hmac_put(idx);
 }
 
+static bool packet_validate_timestamp(const wireless_packet_hdr_t *hdr) {
+	if (!replay_protection_enabled || !neighbour_has_neighbours()) {
+		return true;
+	}
+	uint32_t now_ms_ish = (uint64_t)neighbour_get_global_clock() >> 10;
+	return hdr->nonce.timestamp + WIRELESS_REPLAY_AGE_LIMIT_MS > now_ms_ish;
+}
+
 static bool packet_validate_hmac(const uint8_t *data, size_t data_len, const uint8_t *peer_address, const wireless_packet_hdr_t *hdr) {
 	int idx = hmac_take();
 	ESP_ERROR_CHECK(idx < 0);
@@ -129,7 +140,8 @@ static bool rx_packet_encrypted(wireless_packet_t *packet, const esp_now_recv_in
 		const uint8_t *payload = data + sizeof(wireless_packet_hdr_t);
 		size_t payload_len = data_len - sizeof(wireless_packet_hdr_t);
 		packet_crypt(packet->data, payload, payload_len, &hdr);
-		bool is_valid = packet_validate_hmac(packet->data, payload_len, info->src_addr, &hdr);
+		bool is_valid = packet_validate_timestamp(&hdr) &&
+				packet_validate_hmac(packet->data, payload_len, info->src_addr, &hdr);
 		if (is_valid) {
 			packet->len = payload_len;
 			return true;
@@ -337,7 +349,7 @@ static esp_err_t broadcast_encrypted(const uint8_t *data, size_t len) {
 		};
 		uint8_t data[sizeof(wireless_packet_hdr_t) + WIRELESS_MAX_PACKET_SIZE];
 	} packet;
-	packet.hdr.nonce.timestamp = esp_timer_get_time() >> 10;
+	packet.hdr.nonce.timestamp = (uint64_t)neighbour_get_global_clock() >> 10;
 	packet.hdr.nonce.packet_cnt = wireless_packet_tx_cnt++;
 	packet.hdr.nonce.random_id = wireless_random_id;
 
@@ -454,4 +466,8 @@ bool wireless_is_local_address(const uint8_t *addr) {
 
 void wireless_set_encryption_enable(bool enable) {
 	wireless_encryption_enabled = enable;
+}
+
+void wireless_set_replay_protection_enable(bool enable) {
+	replay_protection_enabled = enable;
 }
