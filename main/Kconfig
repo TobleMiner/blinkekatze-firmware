@@ -23,4 +23,17 @@ menu "Blinkekatze"
 			  32 byte file that will then be used as the
 			  encryption and signing key for messages sent wirelessly
 	endchoice
+
+	menu "Experimental"
+		config BK_GAUGE_DF_PROG
+			bool "[DANGER, read help!] Program battery gauge data flash in circuit"
+			default n
+			help
+			  Use experimental soft I2C to program battery gauge data flash
+			  from ESP in circuit. I've bricked a few TI gauges through bugs
+			  in dataflash upload procedures before. Thus I consider this
+			  functionality to be potentially dangerous. It is not tested
+			  thoroughly and can permanently break your battery gauge! Use
+			  at your own risk.
+	endmenu
 endmenu

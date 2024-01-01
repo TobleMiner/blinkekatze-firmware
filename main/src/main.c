@@ -14,12 +14,14 @@
 #include <esp_timer.h>
 #include <hal/gpio_hal.h>
 #include <hal/gpio_ll.h>
+#include <sdkconfig.h>
 #include <soc/gpio_sig_map.h>
 #include <soc/io_mux_reg.h>
 
 #include "bonk.h"
 #include "bq24295.h"
 #include "bq27546.h"
+#include "bq27546_dataflash.h"
 #include "color_override.h"
 #include "default_color.h"
 #include "embedded_files.h"
@@ -231,6 +233,32 @@ void app_main(void) {
 		ESP_ERROR_CHECK(bq27546_init(&gauge, &i2c_bus));
 		is_rev2 = true;
 	}
+
+#ifdef CONFIG_BK_GAUGE_DF_PROG
+	err = bq27546_is_sealed(&gauge);
+	if (err < 0) {
+		ESP_LOGE(TAG, "Failed to get sealing status: %d", err);
+		ESP_ERROR_CHECK(ESP_FAIL);
+	} else {
+		bool sealed = !!err;
+		if (sealed) {
+			ESP_LOGI(TAG, "Gauge sealed, skipping data flash programming");
+		} else {
+			ESP_LOGI(TAG, "Gauge not sealed, programming data flash...");
+			err = bq27546_write_flash(&gauge, bq27546_inr18650_dataflash, bq27546_inr18650_dataflash_num_ops);
+			if (err) {
+				ESP_LOGE(TAG, "Programming failed: %d", err);
+				ESP_ERROR_CHECK(ESP_FAIL);
+			} else {
+				ESP_LOGI(TAG, "Programming successful, sealing gauge..");
+				vTaskDelay(pdMS_TO_TICKS(10000));
+				bq27546_seal(&gauge);
+				ESP_LOGI(TAG, "Done. Restarting.");
+				esp_restart();
+			}
+		}
+	}
+#endif
 	ESP_LOGI(TAG, "Battery voltage: %dmV", bq27546_get_voltage_mv(&gauge));
 	int current_ma;
 	ESP_ERROR_CHECK(bq27546_get_current_ma(&gauge, &current_ma));
@@ -265,7 +293,7 @@ void app_main(void) {
 	ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &dev_cfg, &dev));
 
 	size_t dma_buf_len = ALIGN_UP(BYTES_RESET + BYTES_DATA + BYTES_RESET, 4);
-	ESP_LOGI(TAG, "Allocating %zu bytes of DMA memory", dma_buf_len);
+	ESP_LOGI(TAG, "Allocating %lu bytes of DMA memory", (unsigned long)dma_buf_len);
 	uint8_t *led_data = heap_caps_malloc(dma_buf_len, MALLOC_CAP_DMA);
 	ESP_ERROR_CHECK(!led_data);
 	memset(led_data, 0, dma_buf_len);

@@ -122,7 +122,7 @@ esp_err_t bq27546_write_flash_execute_(bq27546_t *bq, const bq27546_flash_op_t *
 		case BQ27546_FLASH_CMD_WRITE:
 			ESP_LOGI(TAG, "Writing %zu bytes to 0x%02x...", op->compare.len, op->write.i2c_address);
 			ESP_LOG_BUFFER_HEXDUMP(TAG, op->write.data, op->write.len, ESP_LOG_INFO);
-			err = i2c_bus_write(bq->i2c_bus, op->write.i2c_address, op->write.data, op->write.len);
+			err = i2c_bus_soft_write(bq->i2c_bus, op->write.i2c_address, op->write.data, op->write.len, 10000);
 			if (err) {
 				ESP_LOGE(TAG, "Failed writing to gauge, op %zu, %d", i, err);
 				vTaskDelay(pdMS_TO_TICKS(100));
@@ -132,7 +132,7 @@ esp_err_t bq27546_write_flash_execute_(bq27546_t *bq, const bq27546_flash_op_t *
 		case BQ27546_FLASH_CMD_COMPARE:
 			ESP_LOGI(TAG, "Reading %zu bytes from 0x%02x@0x%02x...", op->compare.len, op->compare.i2c_address, op->compare.reg);
 			memset(read_buffer, 0x55, op->compare.len);
-			err = i2c_bus_write_then_read(bq->i2c_bus, op->compare.i2c_address, &op->compare.reg, 1, read_buffer, op->compare.len);
+			err = i2c_bus_soft_write_then_read(bq->i2c_bus, op->compare.i2c_address, &op->compare.reg, 1, read_buffer, op->compare.len, 10000);
 			if (err) {
 				ESP_LOGE(TAG, "Failed reading from gauge, op %zu: %d", i, err);
 				vTaskDelay(pdMS_TO_TICKS(100));
@@ -151,6 +151,8 @@ esp_err_t bq27546_write_flash_execute_(bq27546_t *bq, const bq27546_flash_op_t *
 			ESP_LOGE(TAG, "Unknown flash operation 0x%02x, op %zu", op->type, i);
 			return ESP_FAIL;
 		}
+		/* Wait one tick to ensure watchdog stays happy */
+		vTaskDelay(1);
 	}
 
 	return ESP_OK;
@@ -175,7 +177,9 @@ esp_err_t bq27546_write_flash(bq27546_t *bq, const bq27546_flash_op_t *flash_ops
 	}
 
 	lock(bq);
+	i2c_bus_enter_soft_exclusive(bq->i2c_bus);
 	esp_err_t err = bq27546_write_flash_execute_(bq, flash_ops, num_ops, read_buffer);
+	i2c_bus_leave_soft_exclusive(bq->i2c_bus);
 	unlock(bq);
 
 	if (read_buffer) {
