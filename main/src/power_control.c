@@ -133,6 +133,7 @@ static void power_control_update(void *arg) {
 	if (ms_since_last_watchdog_reset >= CHARGER_WATCHDOG_RESET_INTERVAL_MS) {
 		force_input_current_limit();
 		bq24295_watchdog_reset(power_control.charger);
+		power_control.timestamp_charger_watchdog_reset = now;
 	}
 
 	if (shared_config_should_tx(&power_control.shared_cfg)) {
