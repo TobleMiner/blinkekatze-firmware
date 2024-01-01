@@ -3,6 +3,7 @@
 
 #include <esp_err.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <rom/ets_sys.h>
 
 #include "i2c_bus.h"
@@ -182,4 +183,181 @@ void i2c_detect(i2c_bus_t* bus) {
 		}
 		ESP_LOGI(TAG, "========================");
 	}
+}
+
+void i2c_bus_enter_soft_exclusive(i2c_bus_t *bus) {
+	xSemaphoreTake(bus->lock, portMAX_DELAY);
+	ESP_ERROR_CHECK(i2c_bus_deinit_(bus));
+	ESP_ERROR_CHECK(gpio_reset_pin(bus->gpio_sda));
+	ESP_ERROR_CHECK(gpio_set_direction(bus->gpio_sda, GPIO_MODE_INPUT));
+	ESP_ERROR_CHECK(gpio_reset_pin(bus->gpio_scl));
+	ESP_ERROR_CHECK(gpio_set_direction(bus->gpio_scl, GPIO_MODE_INPUT));
+}
+
+void i2c_bus_leave_soft_exclusive(i2c_bus_t *bus) {
+	ESP_ERROR_CHECK(i2c_bus_init_(bus));
+	xSemaphoreGive(bus->lock);
+}
+
+static esp_err_t i2c_wait_bus_idle(i2c_bus_t *bus, unsigned int timeout_ms) {
+	int64_t deadline = esp_timer_get_time() + (int64_t)timeout_ms * 1000LL;
+	int level_sda, level_scl;
+	do {
+		level_sda = gpio_get_level(bus->gpio_sda);
+		level_scl = gpio_get_level(bus->gpio_scl);
+		if (!level_sda || !level_scl) {
+			int64_t now = esp_timer_get_time();
+			if (now > deadline) {
+				return ESP_ERR_TIMEOUT;
+			}
+			vTaskDelay(1);
+		}
+	} while (!level_sda || !level_scl);
+
+	return ESP_OK;
+}
+
+static esp_err_t i2c_wait_clock_idle(i2c_bus_t *bus, unsigned int timeout_ms) {
+	int64_t deadline = esp_timer_get_time() + (int64_t)timeout_ms * 1000LL;
+	int level_scl;
+	do {
+		level_scl = gpio_get_level(bus->gpio_scl);
+		if (!level_scl) {
+			int64_t now = esp_timer_get_time();
+			if (now > deadline) {
+				return ESP_ERR_TIMEOUT;
+			}
+			vTaskDelay(1);
+		}
+	} while (!level_scl);
+
+	return ESP_OK;
+}
+
+static esp_err_t i2c_bus_clock_out_byte(i2c_bus_t *bus, uint8_t datum, unsigned int clock_stretch_timeout_ms) {
+	/* Clock out bits */
+	for (int i = 7; i >= 0; i--) {
+		unsigned int bit = datum & (1 << i);
+		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 0));
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, bit ? 1 : 0));
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 1));
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 2UL, bus->speed_hz));
+	}
+
+	/* Release SDA for ack */
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 0));
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 1));
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 1));
+
+	/* Wait for clock stretching */
+	esp_err_t err = i2c_wait_clock_idle(bus, clock_stretch_timeout_ms);
+
+	/* Return SDA to idle */
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 2UL, bus->speed_hz));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 0));
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 1));
+	return err;
+}
+
+static void i2c_bus_clock_in_byte(i2c_bus_t *bus, uint8_t *datum, bool ack) {
+	/* Clock out bits */
+	uint8_t byt = 0;
+	for (int i = 7; i >= 0; i--) {
+		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 0));
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 1));
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 1));
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+		int bit = gpio_get_level(bus->gpio_sda);
+		byt |= (bit ? 1 : 0) << i;
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+	}
+	*datum = byt;
+
+	/* Send ack / nak */
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 0));
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, ack ? 0 : 1));
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 1));
+
+	/* SDA back to idle */
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 2UL, bus->speed_hz));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 0));
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 1));
+}
+
+esp_err_t i2c_bus_soft_write_then_read(i2c_bus_t *bus, uint8_t address,
+                                       const uint8_t *data_write, unsigned int write_len,
+                                       uint8_t *data_read, unsigned int read_len,
+				       unsigned int idle_timeout_ms) {
+
+	/* Wait for bus to become idle */
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 1));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 1));
+	ESP_ERROR_CHECK(gpio_set_direction(bus->gpio_sda, GPIO_MODE_INPUT_OUTPUT_OD));
+	ESP_ERROR_CHECK(gpio_set_direction(bus->gpio_scl, GPIO_MODE_INPUT_OUTPUT_OD));
+	esp_err_t err = i2c_wait_bus_idle(bus, idle_timeout_ms);
+	if (err) {
+		ESP_LOGE(TAG, "Bus did not become idle");
+		return err;
+	}
+
+	/* Send start condition */
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 0));
+	ets_delay_us(DIV_ROUND_UP(1000000UL, bus->speed_hz));
+
+	/* Send address (W) */
+	err = i2c_bus_clock_out_byte(bus, address << 1, idle_timeout_ms);
+	if (err) {
+		ESP_LOGE(TAG, "Clock stretch timeout after address (W)");
+		return err;
+	}
+
+	/* Send data */
+	for (unsigned int i = 0; i < write_len; i++) {
+		err = i2c_bus_clock_out_byte(bus, data_write[i], idle_timeout_ms);
+		if (err) {
+			ESP_LOGE(TAG, "Clock stretch timeout on byte %u", i);
+			return err;
+		}
+	}
+
+	if (read_len) {
+		/* Send repeated start */
+		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 1));
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 2UL, bus->speed_hz));
+		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 1));
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 2UL, bus->speed_hz));
+		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 0));
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 2UL, bus->speed_hz));
+
+		/* Send address (R) */
+		err = i2c_bus_clock_out_byte(bus, (address << 1) | 1, idle_timeout_ms);
+		if (err) {
+			ESP_LOGE(TAG, "Clock stretch timeout after address (R)");
+			return err;
+		}
+
+		/* Receive data */
+		for (unsigned int i = 0; i < write_len; i++) {
+			i2c_bus_clock_in_byte(bus, &data_read[i], i == write_len - 1);
+		}
+	}
+
+	/* Send stop condition */
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 0));
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 2UL, bus->speed_hz));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 1));
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 2UL, bus->speed_hz));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 1));
+	ets_delay_us(DIV_ROUND_UP(1000000UL / 2UL, bus->speed_hz));
+	return ESP_OK;
 }

@@ -35,8 +35,8 @@ esp_err_t i2c_bus_init(i2c_bus_t* bus, i2c_port_t i2c_port, unsigned int gpio_sd
 esp_err_t i2c_bus_deinit(i2c_bus_t* bus);
 esp_err_t i2c_bus_cmd_begin(i2c_bus_t* bus, i2c_cmd_handle_t handle, TickType_t timeout);
 esp_err_t i2c_bus_write_then_read(i2c_bus_t *bus, uint8_t address,
-					 const uint8_t *data_write, unsigned int write_len,
-					 uint8_t *data_read, unsigned int read_len);
+				  const uint8_t *data_write, unsigned int write_len,
+				  uint8_t *data_read, unsigned int read_len);
 esp_err_t i2c_bus_read_byte(i2c_bus_t *bus, uint8_t address, uint8_t reg, uint8_t *res);
 esp_err_t i2c_bus_write_byte(i2c_bus_t *bus, uint8_t address, uint8_t reg, uint8_t val);
 
@@ -46,4 +46,18 @@ void i2c_detect(i2c_bus_t* i2c_bus);
 static inline esp_err_t i2c_bus_write(i2c_bus_t *bus, uint8_t address,
 				      const uint8_t *data_write, unsigned int write_len) {
 	return i2c_bus_write_then_read(bus, address, data_write, write_len, NULL, 0);
+}
+
+/* Soft I2C API */
+void i2c_bus_enter_soft_exclusive(i2c_bus_t *bus);
+void i2c_bus_leave_soft_exclusive(i2c_bus_t *bus);
+esp_err_t i2c_bus_soft_write_then_read(i2c_bus_t *bus, uint8_t address,
+                                       const uint8_t *data_write, unsigned int write_len,
+                                       uint8_t *data_read, unsigned int read_len,
+				       unsigned int idle_timeout_ms);
+
+static inline esp_err_t i2c_bus_soft_write(i2c_bus_t *bus, uint8_t address,
+					   const uint8_t *data_write, unsigned int write_len,
+					   unsigned int idle_timeout_ms) {
+	return i2c_bus_soft_write_then_read(bus, address, data_write, write_len, NULL, 0, idle_timeout_ms);
 }
