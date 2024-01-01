@@ -11,6 +11,14 @@ This repository contains the firmware for the Blinkekatze project.
  - Full color calibration for accurate color representation
  - USB shell for management of Blinkekatzen groups
 
+# Limitations
+
+Currently the firmware can not program the battery gauge of Blinkekatzen by itself.  
+There is some infrastructure to implement this in the future however it will likely
+require adding a soft I2C implementation due to extreme response times and clock
+stretching of the gauge beyond what the ESP32-C3 supports in hardware.  
+I'm using BQStudio and an EV2400 for programming at the moment.
+
 # Dependencies
 
 The Blinkekatze firmware is based on the esp-idf development framework.
