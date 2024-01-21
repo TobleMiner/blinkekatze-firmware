@@ -24,6 +24,13 @@ communication on the I2C bus, pulling SCL and/or SDA low continously.
 As an alternative BQStudio and an EV2400 or similar interface can be used for programming
 via I2C connector J3.
 
+## Supported batteries
+
+Currently Blinkekatzen come with only one battery gauge profile. This profile has been
+built for Samsung INR18650-35E LiIon cells. If another type is to be used with Blinkekatzen
+it is recommended to add a profile for that specific battery type through TI BQStudio. If
+this step is omitted runtime and remaining capacity estimations will be significantly off.
+
 # Dependencies
 
 The Blinkekatze firmware is based on the esp-idf development framework.
