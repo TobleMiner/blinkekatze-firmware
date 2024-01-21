@@ -13,7 +13,7 @@ This repository contains the firmware for the Blinkekatze project.
 
 # Limitations
 
-Currently the firmware does not program the battery gauge of Blinkekatzen by itself.  
+Currently the firmware does not program the battery gauge of Blinkekatzen by default.  
 An experimental method for programming battery gauges is implemented and can be enabled
 through menuconfig. If you enable this option please make sure the ESP32 is not reset
 during the programming operation. Programming of the gauge is only done once during
