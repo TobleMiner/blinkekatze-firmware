@@ -271,9 +271,7 @@ static void i2c_bus_clock_in_byte(i2c_bus_t *bus, uint8_t *datum, bool ack) {
 	uint8_t byt = 0;
 	for (int i = 7; i >= 0; i--) {
 		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 0));
-		ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
-		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 1));
-		ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
+		ets_delay_us(DIV_ROUND_UP(1000000UL / 2UL, bus->speed_hz));
 		ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 1));
 		ets_delay_us(DIV_ROUND_UP(1000000UL / 4UL, bus->speed_hz));
 		int bit = gpio_get_level(bus->gpio_sda);
