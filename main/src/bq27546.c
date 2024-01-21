@@ -121,35 +121,34 @@ esp_err_t bq27546_write_flash_execute_(bq27546_t *bq, const bq27546_flash_op_t *
 
 		switch (op->type) {
 		case BQ27546_FLASH_CMD_WRITE:
-			ESP_LOGI(TAG, "Writing %zu bytes to 0x%02x...", op->compare.len, op->write.i2c_address);
+			ESP_LOGI(TAG, "Writing %lu bytes to 0x%02x...", (unsigned long)op->compare.len, op->write.i2c_address);
 			ESP_LOG_BUFFER_HEXDUMP(TAG, op->write.data, op->write.len, ESP_LOG_INFO);
 			err = i2c_bus_soft_write(bq->i2c_bus, op->write.i2c_address, op->write.data, op->write.len, 10000);
 			if (err) {
-				ESP_LOGE(TAG, "Failed writing to gauge, op %zu, %d", i, err);
-				vTaskDelay(pdMS_TO_TICKS(100));
+				ESP_LOGE(TAG, "Failed writing to gauge, op %lu, %d", (unsigned long)i, err);
 				return err;
 			}
 			break;
 		case BQ27546_FLASH_CMD_COMPARE:
-			ESP_LOGI(TAG, "Reading %zu bytes from 0x%02x@0x%02x...", op->compare.len, op->compare.i2c_address, op->compare.reg);
+			ESP_LOGI(TAG, "Reading %lu bytes from 0x%02x@0x%02x...", (unsigned long)op->compare.len, op->compare.i2c_address, op->compare.reg);
 			memset(read_buffer, 0x55, op->compare.len);
 			err = i2c_bus_soft_write_then_read(bq->i2c_bus, op->compare.i2c_address, &op->compare.reg, 1, read_buffer, op->compare.len, 10000);
 			if (err) {
-				ESP_LOGE(TAG, "Failed reading from gauge, op %zu: %d", i, err);
-				vTaskDelay(pdMS_TO_TICKS(100));
+				ESP_LOGE(TAG, "Failed reading from gauge, op %lu: %d", (unsigned long)i, err);
 				return err;
 			}
 			ESP_LOG_BUFFER_HEXDUMP(TAG, read_buffer, op->compare.len, ESP_LOG_INFO);
 			if (memcmp(op->compare.data, read_buffer, op->compare.len)) {
-				ESP_LOGE(TAG, "Data read back does not match, op %zu", i);
+				ESP_LOGE(TAG, "Data read back does not match, op %lu", (unsigned long)i);
 				return ESP_FAIL;
 			}
 			break;
 		case BQ27546_FLASH_CMD_WAIT:
+			ESP_LOGI(TAG, "Sleeping for %lu ms...", (unsigned long)op->wait.delay_ms);
 			vTaskDelay(pdMS_TO_TICKS(op->wait.delay_ms));
 			break;
 		default:
-			ESP_LOGE(TAG, "Unknown flash operation 0x%02x, op %zu", op->type, i);
+			ESP_LOGE(TAG, "Unknown flash operation 0x%02x, op %lu", op->type, (unsigned long)i);
 			return ESP_FAIL;
 		}
 		/* Wait one tick to ensure watchdog stays happy */
