@@ -1,5 +1,5 @@
 /*
- * Tiny ChaCha20 implementation based on public doamin code
+ * Tiny ChaCha20 implementation based on public domain code
  */
 
 #include <string.h>
