@@ -345,8 +345,8 @@ esp_err_t i2c_bus_soft_write_then_read(i2c_bus_t *bus, uint8_t address,
 		}
 
 		/* Receive data */
-		for (unsigned int i = 0; i < write_len; i++) {
-			i2c_bus_clock_in_byte(bus, &data_read[i], i == write_len - 1);
+		for (unsigned int i = 0; i < read_len; i++) {
+			i2c_bus_clock_in_byte(bus, &data_read[i], i != read_len - 1);
 		}
 	}
 
