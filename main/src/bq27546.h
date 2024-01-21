@@ -52,3 +52,4 @@ int bq27546_get_full_charge_capacity_mah(bq27546_t *bq);
 int bq27546_get_remaining_capacity_mah(bq27546_t *bq);
 int bq27546_is_sealed(bq27546_t *bq);
 esp_err_t bq27546_seal(bq27546_t *bq);
+esp_err_t bq27546_it_enable(bq27546_t *bq);

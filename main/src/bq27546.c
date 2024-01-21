@@ -25,6 +25,7 @@
 #define SUBCMD_FW_VERSION		0x0002
 #define SUBCMD_HW_VERSION		0x0003
 #define SUBCMD_SEALED			0x0020
+#define SUBCMD_IT_ENABLE		0x0021
 
 #define ADDRESS		0x55
 #define CHIP_ID		0x0546
@@ -269,4 +270,8 @@ int bq27546_is_sealed(bq27546_t *bq) {
 
 esp_err_t bq27546_seal(bq27546_t *bq) {
 	return run_subcmd(bq, CMD_CONTROL, SUBCMD_SEALED);
+}
+
+esp_err_t bq27546_it_enable(bq27546_t *bq) {
+	return run_subcmd(bq, CMD_CONTROL, SUBCMD_IT_ENABLE);
 }
