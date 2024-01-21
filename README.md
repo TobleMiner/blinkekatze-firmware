@@ -67,3 +67,16 @@ between Blinkekatzen.
 ### Runtime
 
 At runtime a set of configuration options is available through a serial shell on the USB port of the Blinkekatzen. Autocompletion and a `help` command are available.
+
+## Flashing
+
+Flashing this firmware onto Blinkekatzen is very easy thanks to the USB Serial and JTAG peripheral integrated into the ESP32-C3. Just connecting to the USB-C port of
+a Blinkekatze will make a ACM USB serial device available that can be used for flashing via esp-idf. On a Linux system `idf.py -p /dev/ttyACM0 build flash monitor`
+will commonly be the correct command to build and flash the firmware and enter serial monitor mode afterwards.
+
+### Troubleshooting
+
+Depending on the exact vendor and manufacturer some ESP32-C3 MINI modules can come preflashed with firmware that reconfigures the USB pins to a different function.
+For those modules it might be ncessary to use the strapping pins exposed via header J2 on the Blinkekatze. If any problems are encoutered during flashing it might help
+to short IO9 on J2 to GND and - with IO9 still connected to GND - connect EN to GND and disconect it again. The connection between IO9 and GND can now be removed.
+This puts the ESP32-C3 into USB boot mode. From here on flashing as normal should be possible.
