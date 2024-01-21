@@ -189,9 +189,11 @@ void i2c_bus_enter_soft_exclusive(i2c_bus_t *bus) {
 	xSemaphoreTake(bus->lock, portMAX_DELAY);
 	ESP_ERROR_CHECK(i2c_bus_deinit_(bus));
 	ESP_ERROR_CHECK(gpio_reset_pin(bus->gpio_sda));
-	ESP_ERROR_CHECK(gpio_set_direction(bus->gpio_sda, GPIO_MODE_INPUT));
 	ESP_ERROR_CHECK(gpio_reset_pin(bus->gpio_scl));
-	ESP_ERROR_CHECK(gpio_set_direction(bus->gpio_scl, GPIO_MODE_INPUT));
+	ESP_ERROR_CHECK(gpio_set_direction(bus->gpio_sda, GPIO_MODE_INPUT_OUTPUT_OD));
+	ESP_ERROR_CHECK(gpio_set_direction(bus->gpio_scl, GPIO_MODE_INPUT_OUTPUT_OD));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 1));
+	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 1));
 }
 
 void i2c_bus_leave_soft_exclusive(i2c_bus_t *bus) {
@@ -302,8 +304,6 @@ esp_err_t i2c_bus_soft_write_then_read(i2c_bus_t *bus, uint8_t address,
 	/* Wait for bus to become idle */
 	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_sda, 1));
 	ESP_ERROR_CHECK(gpio_set_level(bus->gpio_scl, 1));
-	ESP_ERROR_CHECK(gpio_set_direction(bus->gpio_sda, GPIO_MODE_INPUT_OUTPUT_OD));
-	ESP_ERROR_CHECK(gpio_set_direction(bus->gpio_scl, GPIO_MODE_INPUT_OUTPUT_OD));
 	esp_err_t err = i2c_wait_bus_idle(bus, idle_timeout_ms);
 	if (err) {
 		ESP_LOGE(TAG, "Bus did not become idle");
