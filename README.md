@@ -15,9 +15,14 @@ This repository contains the firmware for the Blinkekatze project.
 
 Currently the firmware does not program the battery gauge of Blinkekatzen by itself.  
 An experimental method for programming battery gauges is implemented and can be enabled
-through menuconfig. However it is currently not recommended to do so since it has been
-barely tested and might brick battery gauges.  
-I'm using BQStudio and an EV2400 for programming at the moment.
+through menuconfig. If you enable this option please make sure the ESP32 is not reset
+during the programming operation. Programming of the gauge is only done once during
+initial bootup and may take up to a minute. If the ESP is reset during the programming
+operation the battery gauge can end up in a bricked state where it totally jams
+communication on the I2C bus, pulling SCL and/or SDA low continously.
+
+As an alternative BQStudio and an EV2400 or similar interface can be used for programming
+via I2C connector J3.
 
 # Dependencies
 
@@ -35,8 +40,8 @@ details further steps required for installation.
 
 ## Additional dependencies
 
-Within the python venv provided for esp-idf a version of opencv-python for python3 (cv2 API) must be available.
-It can be directly installed through pip (`pip3 install opencv-python`).
+Within the python venv provided for esp-idf a version of pypng and numpy for python3 must be available.
+The dependencies can be directly installed through pip (`pip3 install -r requirements.txt`).
 
 # Usage
 

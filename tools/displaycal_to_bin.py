@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import cv2
+import png
 import numpy
 import struct
 import sys
@@ -17,16 +17,16 @@ infilename = sys.argv[2]
 outmax = int(sys.argv[3])
 outfilename = sys.argv[4]
 
-bgr = cv2.imread(infilename, cv2.IMREAD_UNCHANGED).astype(numpy.float32)
+reader = png.Reader(infilename)
+width, height, pixels, metadata = reader.read_flat()
+imagedata = numpy.array(list(map(numpy.double, pixels)))
+rgb = numpy.reshape(imagedata, (height, width, 3))
 
-height = bgr.shape[0]
-width = bgr.shape[1]
-
-bgr *= outmax
-bgr /= inmax
+rgb *= outmax
+rgb /= inmax
 
 with open(outfilename, "wb") as outfile:
 	for y in range(height):
 		for x in range(width):
-			[b, g, r] = bgr[y][x]
+			[r, g, b] = rgb[y][x]
 			outfile.write(struct.pack('<HHH', round(r), round(g), round(b)))
