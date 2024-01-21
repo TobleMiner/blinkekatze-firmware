@@ -250,8 +250,11 @@ void app_main(void) {
 				ESP_LOGE(TAG, "Programming failed: %d", err);
 				ESP_ERROR_CHECK(ESP_FAIL);
 			} else {
-				ESP_LOGI(TAG, "Programming successful, sealing gauge..");
+				ESP_LOGI(TAG, "Programming successful, enabling gauging...");
 				vTaskDelay(pdMS_TO_TICKS(10000));
+				ESP_ERROR_CHECK(bq27546_it_enable(&gauge));
+				ESP_LOGI(TAG, "Sealing gauge...");
+				vTaskDelay(pdMS_TO_TICKS(1000));
 				bq27546_seal(&gauge);
 				ESP_LOGI(TAG, "Done. Restarting.");
 				esp_restart();
