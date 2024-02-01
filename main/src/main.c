@@ -316,7 +316,7 @@ void app_main(void) {
 	bq24295_t charger;
 	ESP_ERROR_CHECK(bq24295_init(&charger, &i2c_bus));
 
-	ESP_ERROR_CHECK(power_control_init(&charger));
+	ESP_ERROR_CHECK(power_control_init(&charger, &gauge));
 
 	ESP_ERROR_CHECK(wireless_init());
 

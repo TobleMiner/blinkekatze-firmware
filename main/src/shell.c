@@ -791,6 +791,50 @@ static int wireless_replay_protection(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_int *soc;
+	struct arg_str *enable;
+	struct arg_end *end;
+} battery_storage_mode_args;
+
+static int battery_storage_mode(int argc, char **argv) {
+	battery_storage_mode_args.soc->ival[0] = -1;
+	battery_storage_mode_args.enable->sval[0] = "";
+
+	int errors = arg_parse(argc, argv, (void **)&battery_storage_mode_args);
+	if (errors) {
+		arg_print_errors(stderr, battery_storage_mode_args.end, argv[0]);
+		return 1;
+	}
+
+	bool enable;
+	int err = parse_on_off(battery_storage_mode_args.enable->sval[0], &enable);
+	if (err) {
+		fprintf(stderr, "'%s' is neither on nor off\r\n", wireless_replay_protection_args.enable->sval[0]);
+		return 1;
+	}
+
+	main_loop_lock();
+	if (battery_storage_mode_args.soc->count) {
+		int target_soc = battery_storage_mode_args.soc->ival[0];
+		if (target_soc < 0) {
+			main_loop_unlock();
+			fprintf(stderr, "Invalid target soc of %d%%\r\n", target_soc);
+			return 1;
+		}
+
+		if (power_control_set_battery_storage_soc(target_soc)) {
+			main_loop_unlock();
+			fprintf(stderr, "Failed to set target soc to %d%%\r\n", target_soc);
+			return 1;
+		}
+	}
+
+	power_control_set_battery_storage_mode_enable(enable);
+	main_loop_unlock();
+
+	return 0;
+}
 
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
@@ -1011,7 +1055,7 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 wireless_encryption,
 			 &wireless_encryption_args);
 
-	usb_enable_override_args.enable = arg_str0(NULL, NULL, "on|off", "Disable/enable USB enable override");
+	usb_enable_override_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable USB enable override");
 	usb_enable_override_args.end = arg_end(1);
 
 	ADD_COMMAND_ARGS("usb_enable_override",
@@ -1019,7 +1063,7 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 usb_enable_override,
 			 &usb_enable_override_args);
 
-	usb_disable_args.disable = arg_str1(NULL, NULL, "on|off", "Disable/enable USB enable override");
+	usb_disable_args.disable = arg_str1(NULL, NULL, "on|off", "Disable/enable USB ports");
 	usb_disable_args.end = arg_end(1);
 
 	ADD_COMMAND_ARGS("usb_disable",
@@ -1034,6 +1078,15 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 "Enable or disable wireless replay protection",
 			 wireless_replay_protection,
 			 &wireless_replay_protection_args);
+
+	battery_storage_mode_args.soc = arg_int0("s", "soc", "soc", "Target SoC");
+	battery_storage_mode_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable battery storage mode");
+	battery_storage_mode_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("battery_storage_mode",
+			 "Enable or disable battery storage mode",
+			 battery_storage_mode,
+			 &battery_storage_mode_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);
