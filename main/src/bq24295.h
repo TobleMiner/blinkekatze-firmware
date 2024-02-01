@@ -32,6 +32,7 @@ esp_err_t bq24295_set_input_current_limit(bq24295_t *charger, unsigned int curre
 esp_err_t bq24295_get_input_current_limit(bq24295_t *charger, unsigned int *current_ma);
 esp_err_t bq24295_reset(bq24295_t *charger);
 esp_err_t bq24295_set_shutdown(bq24295_t *charger, bool shutdown);
+esp_err_t bq24295_set_hiz_enable(bq24295_t *charger, bool enable);
 esp_err_t bq24295_set_otg_enable(bq24295_t *charger, bool enable);
 esp_err_t bq24295_set_charge_enable(bq24295_t *charger, bool enable);
 esp_err_t bq24295_set_min_system_voltage(bq24295_t *charger, unsigned int voltage_mv);

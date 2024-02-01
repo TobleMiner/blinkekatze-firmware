@@ -72,6 +72,14 @@ static esp_err_t bq24295_rmw(bq24295_t *charger, uint8_t reg, uint8_t clear, uin
 	return i2c_bus_write_byte(charger->i2c_bus, BQ24295_ADDRESS, reg, val);
 }
 
+esp_err_t bq24295_set_hiz_enable(bq24295_t *charger, bool enable) {
+	if (enable) {
+		return bq24295_rmw(charger, REG_INPUT_CTRL, 0x00, 0x80);
+	} else {
+		return bq24295_rmw(charger, REG_INPUT_CTRL, 0x80, 0x00);
+	}
+}
+
 esp_err_t bq24295_set_input_current_limit(bq24295_t *charger, unsigned int current_ma) {
 	uint8_t limit_bits;
 	for (limit_bits = 0; limit_bits < ARRAY_SIZE(bq24295_input_current_lookup_ma); limit_bits++) {
