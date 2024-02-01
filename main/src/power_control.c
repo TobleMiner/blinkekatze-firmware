@@ -26,13 +26,12 @@
 
 typedef enum power_state {
 	POWER_STATE_ON,
-	POWER_STATE_ON_BATTERY_DISCHARGE,
 	POWER_STATE_SOFT_OFF,
-	POWER_STATE_SOFT_OFF_BATTERY_DISCHARGE,
 	POWER_STATE_HARD_OFF
 } power_state_t;
 
 typedef enum battery_storage_state {
+	BATTERY_STORAGE_STATE_IDLE,
 	BATTERY_STORAGE_STATE_CHARGING,
 	BATTERY_STORAGE_STATE_DISCHARGING,
 	BATTERY_STORAGE_STATE_TERMINATE,
@@ -51,7 +50,6 @@ typedef struct power_control {
 	int64_t timestamp_input_reconnect;
 	bool ignore_power_switch;
 	bool battery_discharge_mode_enabled;
-	bool charger_enabled;
 	unsigned int battery_discharge_soc;
 	scheduler_task_t update_task;
 } power_control_t;
@@ -126,7 +124,6 @@ static void force_input_current_limit(void) {
 }
 
 static void set_charger_enable(bool enable) {
-	power_control.charger_enabled = enable;
 	if (enable) {
 		gpio_set_level(GPIO_CHARGE_EN, 0);
 	} else {
@@ -141,6 +138,13 @@ static void disconnect_battery(void) {
 	ESP_ERROR_CHECK(bq24295_set_shutdown(power_control.charger, true));
 }
 
+static void reconnect_battery(void) {
+	// Reenable watchdog and other timers
+	ESP_ERROR_CHECK(bq24295_set_watchdog_timeout(power_control.charger, BQ24295_WATCHDOG_TIMEOUT_40S));
+	// Enable BATFET
+	ESP_ERROR_CHECK(bq24295_set_shutdown(power_control.charger, false));
+}
+
 static void battery_storage_update(void) {
 	int soc = bq27546_get_state_of_charge_percent(power_control.gauge);
 
@@ -150,46 +154,83 @@ static void battery_storage_update(void) {
 	}
 
 	switch (power_control.battery_storage_state) {
+	case BATTERY_STORAGE_STATE_IDLE:
+		if (power_control.battery_discharge_mode_enabled) {
+			ESP_LOGI(TAG, "Battery storage mode enabled");
+			ESP_LOGI(TAG, "Enabling BATFET...");
+			reconnect_battery();
+			ESP_LOGI(TAG, "IDLE -> CHARGING");
+			power_control.battery_storage_state = BATTERY_STORAGE_STATE_CHARGING;
+		}
+		break;
 	case BATTERY_STORAGE_STATE_CHARGING:
-		if (soc == power_control.battery_discharge_soc) {
-			bq24295_set_hiz_enable(power_control.charger, false);
-			power_control.battery_storage_state = BATTERY_STORAGE_STATE_TERMINATE;
+		if (!power_control.battery_discharge_mode_enabled ||
+		    soc == power_control.battery_discharge_soc) {
+			ESP_LOGI(TAG, "Battery storage mode disabled or soc == target_soc");
 			power_control.timestamp_input_reconnect = esp_timer_get_time();
+			ESP_LOGI(TAG, "CHARGING -> TERMINATE");
+			power_control.battery_storage_state = BATTERY_STORAGE_STATE_TERMINATE;
 		} else if (soc > power_control.battery_discharge_soc) {
-			ESP_LOGI(TAG, "Forcing BATFET on...");
-			ESP_ERROR_CHECK(bq24295_set_shutdown(power_control.charger, false));
-			vTaskDelay(pdMS_TO_TICKS(100));
+			ESP_LOGI(TAG, "Above target SoC");
 			ESP_LOGI(TAG, "Disabling charger...");
 			set_charger_enable(false);
-			vTaskDelay(pdMS_TO_TICKS(100));
 			ESP_LOGI(TAG, "Enabling HIZ mode...");
-			bq24295_set_hiz_enable(power_control.charger, true);
-			vTaskDelay(pdMS_TO_TICKS(100));
-			ESP_LOGI(TAG, "Done");
+			ESP_ERROR_CHECK(bq24295_set_hiz_enable(power_control.charger, true));
+			ESP_LOGI(TAG, "CHARGING -> DISCHARGING");
 			power_control.battery_storage_state = BATTERY_STORAGE_STATE_DISCHARGING;
 		}
 		break;
 	case BATTERY_STORAGE_STATE_DISCHARGING:
-		if (soc == power_control.battery_discharge_soc) {
-			bq24295_set_hiz_enable(power_control.charger, false);
+		if (!power_control.battery_discharge_mode_enabled ||
+		    soc == power_control.battery_discharge_soc) {
+			ESP_LOGI(TAG, "Battery storage mode disabled or soc == target_soc");
+			ESP_ERROR_CHECK(bq24295_set_hiz_enable(power_control.charger, false));
 			power_control.timestamp_input_reconnect = esp_timer_get_time();
+			ESP_LOGI(TAG, "DISCHARGING -> TERMINATE");
 			power_control.battery_storage_state = BATTERY_STORAGE_STATE_TERMINATE;
 		} else if (soc < power_control.battery_discharge_soc) {
+			ESP_LOGI(TAG, "Below target SoC");
+			ESP_LOGI(TAG, "Disabling HIZ mode...");
+			ESP_ERROR_CHECK(bq24295_set_hiz_enable(power_control.charger, false));
+			ESP_LOGI(TAG, "Enabling charger...");
 			set_charger_enable(true);
-			bq24295_set_hiz_enable(power_control.charger, false);
+			ESP_LOGI(TAG, "DISCHARGING -> CHARGING");
 			power_control.battery_storage_state = BATTERY_STORAGE_STATE_CHARGING;
 		}
 		break;
 	case BATTERY_STORAGE_STATE_TERMINATE: {
 		int64_t now = esp_timer_get_time();
 		if (now > power_control.timestamp_input_reconnect + MS_TO_US(INPUT_RECONNECT_TIME_MS)) {
-			set_charger_enable(false);
-			disconnect_battery();
-			power_control.battery_storage_state = BATTERY_STORAGE_STATE_DONE;
+			ESP_LOGI(TAG, "Battery reconnect time elapsed");
+			if (power_control.battery_discharge_mode_enabled) {
+				ESP_LOGI(TAG, "Disabling charger...");
+				set_charger_enable(false);
+				ESP_LOGI(TAG, "Disabling BATFET...");
+				disconnect_battery();
+				ESP_LOGI(TAG, "TERMINATE -> DONE");
+				power_control.battery_storage_state = BATTERY_STORAGE_STATE_DONE;
+			} else {
+				if (power_control.power_state == POWER_STATE_HARD_OFF) {
+					ESP_LOGI(TAG, "Disabling BATFET...");
+					disconnect_battery();
+				}
+				ESP_LOGI(TAG, "TERMINATE -> IDLE");
+				power_control.battery_storage_state = BATTERY_STORAGE_STATE_IDLE;
+			}
 		}
 		break;
 	}
-	default:
+	case BATTERY_STORAGE_STATE_DONE:
+		if (!power_control.battery_discharge_mode_enabled) {
+			ESP_LOGI(TAG, "Battery storage mode disabled");
+			if (power_control.power_state != POWER_STATE_HARD_OFF) {
+				ESP_LOGI(TAG, "Enabling BATFET...");
+				reconnect_battery();
+			}
+			set_charger_enable(true);
+			ESP_LOGI(TAG, "DONE -> IDLE");
+			power_control.battery_storage_state = BATTERY_STORAGE_STATE_IDLE;
+		}
 	}
 }
 
@@ -201,63 +242,33 @@ static void power_control_update(void *arg) {
 		if (debounce_bool_get_value(&power_control.power_switch_debounce) == DEBOUNCE_FALSE) {
 			debounce_bool_reset(&power_control.power_good_debounce);
 			power_control.power_state = POWER_STATE_SOFT_OFF;
-		} else if (power_control.battery_discharge_mode_enabled) {
-			power_control.power_state = POWER_STATE_ON_BATTERY_DISCHARGE;
-		}
-		break;
-	case POWER_STATE_ON_BATTERY_DISCHARGE:
-		if (debounce_bool_get_value(&power_control.power_switch_debounce) == DEBOUNCE_FALSE) {
-			debounce_bool_reset(&power_control.power_good_debounce);
-			power_control.power_state = POWER_STATE_SOFT_OFF_BATTERY_DISCHARGE;
-		} else if (!power_control.battery_discharge_mode_enabled) {
-			power_control.power_state = POWER_STATE_ON;
 		}
 		break;
 	case POWER_STATE_SOFT_OFF:
 		if (debounce_bool_get_value(&power_control.power_switch_debounce) == DEBOUNCE_TRUE) {
 			power_control.power_state = POWER_STATE_ON;
-		} else if (power_control.battery_discharge_mode_enabled) {
-			power_control.power_state = POWER_STATE_SOFT_OFF_BATTERY_DISCHARGE;
 		} else if (debounce_bool_get_value(&power_control.power_switch_debounce) == DEBOUNCE_FALSE) {
 			bool power_good;
 			esp_err_t err = bq24295_is_power_good(power_control.charger, &power_good);
 			if (!err && debounce_bool_update(&power_control.power_good_debounce, power_good) &&
 			    debounce_bool_get_value(&power_control.power_good_debounce) == DEBOUNCE_FALSE) {
-				disconnect_battery();
+				if (!power_control.battery_discharge_mode_enabled) {
+					disconnect_battery();
+				}
 				power_control.power_state = POWER_STATE_HARD_OFF;
 			}
-		}
-		break;
-	case POWER_STATE_SOFT_OFF_BATTERY_DISCHARGE:
-		if (debounce_bool_get_value(&power_control.power_switch_debounce) == DEBOUNCE_TRUE) {
-			power_control.power_state = POWER_STATE_ON_BATTERY_DISCHARGE;
-		} else if (!power_control.battery_discharge_mode_enabled) {
-			power_control.power_state = POWER_STATE_SOFT_OFF;
 		}
 		break;
 	case POWER_STATE_HARD_OFF:
 		if (debounce_bool_get_value(&power_control.power_switch_debounce) == DEBOUNCE_TRUE) {
 			power_control.power_state = POWER_STATE_ON;
-		} else if (power_control.battery_discharge_mode_enabled) {
-			power_control.power_state = POWER_STATE_SOFT_OFF_BATTERY_DISCHARGE;
 		}
 	}
 
 	uint64_t now = esp_timer_get_time();
 	uint64_t ms_since_last_watchdog_reset = (now - power_control.timestamp_charger_watchdog_reset) / 1000LL;
 	if (ms_since_last_watchdog_reset >= CHARGER_WATCHDOG_RESET_INTERVAL_MS) {
-		bool is_in_battery_discharge_mode =
-			(power_control.power_state == POWER_STATE_ON_BATTERY_DISCHARGE) ||
-			(power_control.power_state == POWER_STATE_SOFT_OFF_BATTERY_DISCHARGE);
-
-		if (is_in_battery_discharge_mode) {
-			battery_storage_update();
-		} else {
-			bq24295_set_hiz_enable(power_control.charger, false);
-			set_charger_enable(true);
-			power_control.battery_storage_state = BATTERY_STORAGE_STATE_CHARGING;
-		}
-
+		battery_storage_update();
 		force_input_current_limit();
 		bq24295_watchdog_reset(power_control.charger);
 		power_control.timestamp_charger_watchdog_reset = now;
@@ -358,8 +369,7 @@ void power_control_set_ignore_power_switch(bool ignore) {
 }
 
 bool power_control_is_powered_off(void) {
-	return power_control.power_state != POWER_STATE_ON &&
-	       power_control.power_state != POWER_STATE_ON_BATTERY_DISCHARGE;
+	return power_control.power_state != POWER_STATE_ON;
 }
 
 void power_control_set_battery_storage_mode_enable(bool enable) {
