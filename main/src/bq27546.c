@@ -226,7 +226,7 @@ int bq27546_get_state_of_charge_percent(bq27546_t *bq) {
 	int val = bq27546_get_unsigned_param(bq, CMD_STATE_OF_CHARGE);
 
 	if (val > 100) {
-		return ESP_ERR_INVALID_RESPONSE;
+		return -ESP_ERR_INVALID_RESPONSE;
 	}
 	return val;
 }
@@ -235,7 +235,7 @@ int bq27546_get_state_of_health_percent(bq27546_t *bq) {
 	int val = bq27546_get_unsigned_param(bq, CMD_STATE_OF_HEALTH);
 
 	if (val > 100) {
-		return ESP_ERR_INVALID_RESPONSE;
+		return -ESP_ERR_INVALID_RESPONSE;
 	}
 	return val;
 }
