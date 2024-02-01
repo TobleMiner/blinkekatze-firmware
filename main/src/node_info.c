@@ -5,6 +5,7 @@
 #include <esp_app_desc.h>
 #include <esp_mac.h>
 
+#include "power_control.h"
 #include "util.h"
 #include "wireless.h"
 
@@ -37,6 +38,9 @@ void node_info_print_local() {
 	printf("  Temperature: %d°C\r\n", DIV_ROUND((int)bq27546_get_temperature_0_1k(node_info.gauge) - 2732, 10));
 	printf("  Capacity:    %dmAh\r\n", (int)MAX(bq27546_get_full_charge_capacity_mah(node_info.gauge), -1));
 	printf("  SoH:         %d%%\r\n", (int)MAX(bq27546_get_state_of_health_percent(node_info.gauge), -1));
+	if (power_control_is_battery_storage_mode_enabled()) {
+		printf("  Battery storage mode is enabled!\r\n");
+	}
 }
 
 void node_info_print_remote(const neighbour_t *neigh) {

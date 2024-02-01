@@ -379,6 +379,10 @@ void power_control_set_battery_storage_mode_enable(bool enable) {
 	}
 }
 
+bool power_control_is_battery_storage_mode_enabled() {
+	return power_control.battery_discharge_mode_enabled;
+}
+
 esp_err_t power_control_set_battery_storage_soc(unsigned int target_soc) {
 	if (target_soc < BATTERY_DISCHARGE_MIN_SOC || target_soc > 100) {
 		return ESP_ERR_INVALID_ARG;
