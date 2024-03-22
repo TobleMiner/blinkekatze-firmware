@@ -83,4 +83,17 @@ void node_info_print_remote(const neighbour_t *neigh) {
 		printf("  Capacity:    ??""?\r\n");
 		printf("  SoH:         ??""?\r\n");
 	}
+
+	printf("Neighbours:\r\n");
+	neighbour_rssi_info_t *rssi_reports;
+	unsigned int num_reports = neighbour_take_rssi_reports(neigh, &rssi_reports);
+	if (num_reports) {
+		for (unsigned int i = 0; i < num_reports; i++) {
+			neighbour_rssi_info_t *report = &rssi_reports[i];
+			if (!wireless_is_broadcast_address(report->address)) {
+				printf("  "MACSTR": %d dBm\r\n", MAC2STR(report->address), report->rssi);
+			}
+		}
+	}
+	neighbour_put_rssi_reports();
 }

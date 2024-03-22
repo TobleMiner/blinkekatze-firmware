@@ -412,6 +412,9 @@ void app_main(void) {
 					case WIRELESS_PACKET_TYPE_USB_CONFIG:
 						usb_config_rx(&packet);
 						break;
+					case WIRELESS_PACKET_TYPE_NEIGHBOUR_RSSI_REPORT:
+						neighbour_rx_rssi_info(&packet);
+						break;
 					default:
 						ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
 					}

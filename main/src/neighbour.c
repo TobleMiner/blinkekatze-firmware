@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <freertos/task.h>
 
 #include <esp_log.h>
@@ -16,8 +17,12 @@
 #include "util.h"
 #include "wireless.h"
 
-#define NEIGHBOUR_TTL_US		30000000UL
-#define NEIGHBOUR_ADV_INTERVAL_US	 3000000UL
+#define NEIGHBOUR_TTL_US			30000000UL
+#define NEIGHBOUR_ADV_INTERVAL_US		 3000000UL
+#define NEIGHBOUR_RSSI_REPORT_INTERVAL_US	10000000UL
+#define NEIGHBOUR_MAX_RSSI_REPORTS			64
+#define NEIGHBOUR_RSSI_REPORT_ALLOCATION_BLOCK_SIZE	 8
+#define NEIGHBOUR_MAX_REPORTS_PER_PACKET		 8
 
 static const char *TAG = "neighbour";
 
@@ -28,6 +33,10 @@ typedef struct neighbours {
 	scheduler_task_t housekeeping_task;
 	neighbour_t *clock_source;
 	portMUX_TYPE lock;
+	StaticSemaphore_t rssi_report_lock_buffer;
+	SemaphoreHandle_t rssi_report_lock;
+	unsigned int rssi_report_index;
+	int64_t last_rssi_report_timestamp;
 } neighbours_t;
 
 static neighbours_t neighbours;
@@ -121,6 +130,172 @@ esp_err_t neighbour_rx(const wireless_packet_t *packet) {
 	return neighbour_update(packet->src_addr, packet->rx_timestamp, &adv);
 }
 
+static neighbour_rssi_info_t *neighbour_find_rssi_report(const neighbour_t *neigh, const uint8_t *address) {
+	for (unsigned i = 0; i < neigh->num_rssi_reports; i++) {
+		neighbour_rssi_info_t *report = &neigh->neighbour_rssi_reports[i];
+		if (!memcmp(address, report->address, sizeof(report->address))) {
+			return report;
+		}
+	}
+
+	return NULL;
+}
+
+esp_err_t neighbour_add_rssi_report(neighbour_t *neigh, const neighbour_rssi_info_t *new_report) {
+	const uint8_t *bcast_addr = wireless_get_broadcast_address();
+
+	// Try finding an entry that is not used anymore
+	for (unsigned i = 0; i < neigh->num_rssi_reports; i++) {
+		neighbour_rssi_info_t *report = &neigh->neighbour_rssi_reports[i];
+
+		if (wireless_is_broadcast_address(report->address)) {
+			ESP_LOGD(TAG, "Storing new RSSI report in preallocated entry");
+			memcpy(report->address, new_report->address, sizeof(report->address));
+			report->rssi = new_report->rssi;
+			return ESP_OK;
+		}
+	}
+
+	// No free entry in list, need to expand allocation
+	if (neigh->num_rssi_reports >= NEIGHBOUR_MAX_RSSI_REPORTS) {
+		return ESP_ERR_NO_MEM;
+	}
+
+	unsigned int new_num_rssi_reports = neigh->num_rssi_reports +
+					    NEIGHBOUR_RSSI_REPORT_ALLOCATION_BLOCK_SIZE;
+	// Limit number of stored RSSI reports to a reasonable maximum
+	if (new_num_rssi_reports > NEIGHBOUR_MAX_RSSI_REPORTS) {
+		new_num_rssi_reports = NEIGHBOUR_MAX_RSSI_REPORTS;
+	}
+
+	// Try allocating a new set of rssi reports
+	neighbour_rssi_info_t *reallocated_reports = realloc(neigh->neighbour_rssi_reports, sizeof(neighbour_rssi_info_t) * (size_t)new_num_rssi_reports);
+	if (!reallocated_reports) {
+		return ESP_ERR_NO_MEM;
+	}
+	neigh->neighbour_rssi_reports = reallocated_reports;
+
+	// Store new report
+	ESP_LOGD(TAG, "Storing new RSSI report in reallocated array");
+	neighbour_rssi_info_t *report = &neigh->neighbour_rssi_reports[neigh->num_rssi_reports];
+	memcpy(report->address, new_report->address, sizeof(report->address));
+	report->rssi = new_report->rssi;
+
+	// Initialize trailing reports
+	for (unsigned int i = neigh->num_rssi_reports + 1; i < new_num_rssi_reports; i++) {
+		neighbour_rssi_info_t *report = &neigh->neighbour_rssi_reports[i];
+		memcpy(report->address, bcast_addr, sizeof(report->address));
+	}
+	neigh->num_rssi_reports = new_num_rssi_reports;
+
+	return ESP_OK;
+}
+
+esp_err_t neighbour_update_rssi_reports(const uint8_t *address, const neighbour_rssi_info_packet_t *info, const void *payload) {
+	const neighbour_rssi_info_t *reports = payload;
+	neighbour_t *neigh = find_neighbour(address);
+
+	if (!neigh) {
+		return ESP_OK;
+	}
+
+	for (unsigned int i = 0; i < info->num_rssi_reports; i++) {
+		const neighbour_rssi_info_t *report = &reports[i];
+		if (wireless_is_broadcast_address(report->address)) {
+			continue;
+		}
+
+		neighbour_rssi_info_t *old_report = neighbour_find_rssi_report(neigh, report->address);
+		if (old_report) {
+			ESP_LOGD(TAG, "Updating old RSSI report");
+			old_report->rssi = report->rssi;
+		} else if (find_neighbour(report->address) || wireless_is_local_address(report->address)) {
+			esp_err_t err = neighbour_add_rssi_report(neigh, report);
+			if (err) {
+				return err;
+			}
+		}
+	}
+
+	return ESP_OK;
+}
+
+esp_err_t neighbour_rx_rssi_info(const wireless_packet_t *packet) {
+	neighbour_rssi_info_packet_t info;
+	if (packet->len < sizeof(info)) {
+		ESP_LOGD(TAG, "Got short advertisement rssi, expected %u bytes but got only %u bytes",
+			 sizeof(info), packet->len);
+		return ESP_ERR_INVALID_ARG;
+	}
+	memcpy(&info, packet->data, sizeof(info));
+
+	size_t min_size = sizeof(info) + (size_t)info.num_rssi_reports * sizeof(neighbour_rssi_info_t);
+	if (packet->len < min_size) {
+		ESP_LOGD(TAG, "Got internally inconsistent RSSI packet, expected %u bytes but got only %u bytes",
+			 min_size, packet->len);
+		return ESP_ERR_INVALID_ARG;
+	}
+
+	ESP_LOGD(TAG, "Received RSSI report with %u RSSI entries", info.num_rssi_reports);
+	if (xSemaphoreTake(neighbours.rssi_report_lock, 1)) {
+		esp_err_t err = neighbour_update_rssi_reports(packet->src_addr, &info, packet->data + sizeof(info));
+		xSemaphoreGive(neighbours.rssi_report_lock);
+		return err;
+	}
+
+	return ESP_OK;
+}
+
+static esp_err_t send_next_rssi_report(void) {
+	unsigned int reports_in_packet = 0;
+	struct {
+		neighbour_rssi_info_packet_t info;
+		neighbour_rssi_info_t rssi_reports[NEIGHBOUR_MAX_REPORTS_PER_PACKET];
+	} __attribute__((packed)) full_rssi_report_packet;
+	neighbour_t *neigh;
+	unsigned int i = 0;
+	unsigned int num_neighbours = 0;
+	LIST_FOR_EACH_ENTRY(neigh, &neighbours.neighbours, list) {
+		if (i++ >= neighbours.rssi_report_index &&
+		    reports_in_packet < NEIGHBOUR_MAX_REPORTS_PER_PACKET) {
+			neighbour_rssi_info_t *report = &full_rssi_report_packet.rssi_reports[reports_in_packet];
+			memcpy(report->address, neigh->address, sizeof(report->address));
+			report->rssi = neigh->rssi;
+			reports_in_packet++;
+		}
+		num_neighbours++;
+	}
+	// Loop around, filling any empty spots
+	LIST_FOR_EACH_ENTRY(neigh, &neighbours.neighbours, list) {
+		if (reports_in_packet >= NEIGHBOUR_MAX_REPORTS_PER_PACKET) {
+			break;
+		}
+		neighbour_rssi_info_t *report = &full_rssi_report_packet.rssi_reports[reports_in_packet];
+		memcpy(report->address, neigh->address, sizeof(report->address));
+		report->rssi = neigh->rssi;
+		reports_in_packet++;
+	}
+
+	ESP_LOGD(TAG, "Sending RSSI report with %u RSSI entries", num_neighbours);
+
+	// Fill in packet metadata
+	full_rssi_report_packet.info.packet_type = WIRELESS_PACKET_TYPE_NEIGHBOUR_RSSI_REPORT;
+	full_rssi_report_packet.info.num_rssi_reports = num_neighbours;
+
+	// Send the report
+	esp_err_t err = wireless_broadcast((const uint8_t *)&full_rssi_report_packet,
+					   sizeof(full_rssi_report_packet.info) +
+					   sizeof(neighbour_rssi_info_t) * (size_t)reports_in_packet);
+	if (err) {
+		return err;
+	}
+
+	neighbours.rssi_report_index += reports_in_packet;
+	neighbours.rssi_report_index %= num_neighbours;
+
+	return ESP_OK;
+}
+
 static void neighbour_housekeeping(void *priv) {
 	int64_t now = esp_timer_get_time();
 	int64_t global_clock = get_global_clock(now, NULL);
@@ -138,6 +313,7 @@ static void neighbour_housekeeping(void *priv) {
 				update_clock_source();
 			}
 			taskEXIT_CRITICAL(&neighbours.lock);
+			free(neigh->neighbour_rssi_reports);
 			free(neigh);
 		} else {
 			neigh->local_to_remote_time_offset = now - get_uptime_us(neigh, now);
@@ -157,6 +333,15 @@ static void neighbour_housekeeping(void *priv) {
 		neighbours.last_adv_timestamp = now;
 	}
 
+	if (now - neighbours.last_rssi_report_timestamp >= NEIGHBOUR_RSSI_REPORT_INTERVAL_US ||
+	    !neighbours.last_rssi_report_timestamp) {
+		esp_err_t err = send_next_rssi_report();
+		if (err) {
+			ESP_LOGW(TAG, "Failed to send rssi report: %d", err);
+		}
+		neighbours.last_rssi_report_timestamp = esp_timer_get_time();
+	}
+
 	if (neighbour_has_neighbours()) {
 		status_led_set_mode(STATUS_LED_GREEN, STATUS_LED_MODE_ON);
 	} else {
@@ -170,9 +355,11 @@ void neighbour_init() {
 	neighbours.last_adv_timestamp = 0;
 	neighbours.local_to_global_time_offset = 0;
 	neighbours.lock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
+	neighbours.rssi_report_lock = xSemaphoreCreateMutexStatic(&neighbours.rssi_report_lock_buffer);
 	INIT_LIST_HEAD(neighbours.neighbours);
 	scheduler_task_init(&neighbours.housekeeping_task);
 	scheduler_schedule_task_relative(&neighbours.housekeeping_task, neighbour_housekeeping, NULL, MS_TO_US(0));
+	neighbours.rssi_report_index = 0;
 }
 
 int64_t neighbour_get_global_clock_and_source(neighbour_t **src) {
@@ -275,4 +462,14 @@ void neighbour_update_ota_info(const neighbour_t *neigh, const neighbour_ota_inf
 
 int8_t neighbour_get_rssi(const neighbour_t *neigh) {
 	return neigh->rssi;
+}
+
+unsigned int neighbour_take_rssi_reports(const neighbour_t *neigh, neighbour_rssi_info_t **rssi_reports) {
+	xSemaphoreTake(neighbours.rssi_report_lock, portMAX_DELAY);
+	*rssi_reports = neigh->neighbour_rssi_reports;
+	return neigh->num_rssi_reports;
+}
+
+void neighbour_put_rssi_reports(void) {
+	xSemaphoreGive(neighbours.rssi_report_lock);
 }
