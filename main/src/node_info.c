@@ -90,8 +90,9 @@ void node_info_print_remote(const neighbour_t *neigh) {
 	if (num_reports) {
 		for (unsigned int i = 0; i < num_reports; i++) {
 			neighbour_rssi_info_t *report = &rssi_reports[i];
-			if (!wireless_is_broadcast_address(report->address)) {
-				printf("  "MACSTR": %d dBm\r\n", MAC2STR(report->address), report->rssi);
+			const uint8_t *address = neighbour_get_address_from_rssi_report(report);
+			if (address) {
+				printf("  "MACSTR": %d dBm\r\n", MAC2STR(address), report->rssi);
 			}
 		}
 	}

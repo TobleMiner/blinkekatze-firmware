@@ -24,6 +24,7 @@
 #define NEIGHBOUR_MAX_RSSI_REPORTS			64
 #define NEIGHBOUR_RSSI_REPORT_ALLOCATION_BLOCK_SIZE	 8
 #define NEIGHBOUR_MAX_REPORTS_PER_PACKET		 8
+#define NEIGHBOUR_NODE_ID_TLB_ALLOCATION_BLOCK_SIZE	 8
 
 static const char *TAG = "neighbour";
 
@@ -38,9 +39,24 @@ typedef struct neighbours {
 	SemaphoreHandle_t rssi_report_lock;
 	unsigned int rssi_report_index;
 	int64_t last_rssi_report_timestamp;
+	unsigned int local_id_tlb_size;
+	neighbour_t **local_id_tlb;
 } neighbours_t;
 
 static neighbours_t neighbours;
+
+#define LOCAL_NODE_ID_SELF 1
+#define LOCAL_NODE_ID_FIRST 2
+#define LOCAL_NODE_ID_TO_TLB_INDEX(x_) ((x_) - LOCAL_NODE_ID_FIRST)
+#define TLB_INDEX_TO_LOCAL_NODE_ID(x_) ((x_) + LOCAL_NODE_ID_FIRST)
+
+static inline neighbour_t *get_tlb_entry_by_local_node_id(unsigned int id) {
+	return neighbours.local_id_tlb[LOCAL_NODE_ID_TO_TLB_INDEX(id)];
+}
+
+static inline void set_tlb_entry_by_local_node_id(unsigned int id, neighbour_t *neigh) {
+	neighbours.local_id_tlb[LOCAL_NODE_ID_TO_TLB_INDEX(id)] = neigh;
+}
 
 static neighbour_t *find_neighbour(const uint8_t *address) {
 	neighbour_t *neigh;
@@ -96,26 +112,70 @@ static void update_clock_source(void) {
 	neighbours.clock_source = neigh_src;
 }
 
+static unsigned int find_next_local_node_id(void) {
+	unsigned int tlb_idx = 0;
+	for (; tlb_idx < neighbours.local_id_tlb_size; tlb_idx++) {
+		if (!neighbours.local_id_tlb[tlb_idx]) {
+			break;
+		}
+	}
+	return TLB_INDEX_TO_LOCAL_NODE_ID(tlb_idx);
+}
+
+static esp_err_t allocate_local_node_id_tlb_entry(unsigned int id, neighbour_t *neigh) {
+	unsigned int tlb_idx = LOCAL_NODE_ID_TO_TLB_INDEX(id);
+	if (tlb_idx >= neighbours.local_id_tlb_size) {
+		unsigned int new_local_tlb_size = ALIGN_UP(tlb_idx + 1, NEIGHBOUR_NODE_ID_TLB_ALLOCATION_BLOCK_SIZE);
+		neighbour_t **new_tlb = realloc(neighbours.local_id_tlb, new_local_tlb_size * sizeof(neighbour_t *));
+		if (!new_tlb) {
+			return ESP_ERR_NO_MEM;
+		}
+		for (unsigned int i = neighbours.local_id_tlb_size; i < new_local_tlb_size; i++) {
+			new_tlb[i] = NULL;
+		}
+		neighbours.local_id_tlb = new_tlb;
+		neighbours.local_id_tlb_size = new_local_tlb_size;
+	}
+	ESP_LOGV(TAG, "Storing neighbour at TLB index %u", tlb_idx);
+	neighbours.local_id_tlb[tlb_idx] = neigh;
+	return ESP_OK;
+}
+
+static esp_err_t add_new_neighbour(neighbour_t **neigh_ret, const uint8_t *address) {
+	neighbour_t *neigh = calloc(1, sizeof(neighbour_t));
+	if (!neigh) {
+		return ESP_ERR_NO_MEM;
+	}
+	INIT_LIST_HEAD(neigh->list);
+	memcpy(neigh->address, address, sizeof(neigh->address));
+	neigh->location.x = esp_random() >> (32 - 1 - FIXEDPOINT_BASE);
+	neigh->location.y = esp_random() >> (32 - 1 - FIXEDPOINT_BASE);
+	neigh->location.z = esp_random() >> (32 - 1 - FIXEDPOINT_BASE);
+	unsigned int local_node_id = find_next_local_node_id();
+	ESP_LOGD(TAG, "Assigning local node id %u to "MACSTR, local_node_id, MAC2STR(address));
+	esp_err_t err = allocate_local_node_id_tlb_entry(local_node_id, neigh);
+	if (err) {
+		free(neigh);
+		return err;
+	}
+	neigh->local_node_id = local_node_id;
+	taskENTER_CRITICAL(&neighbours.lock);
+	LIST_APPEND(&neigh->list, &neighbours.neighbours);
+	taskEXIT_CRITICAL(&neighbours.lock);
+
+	*neigh_ret = neigh;
+	return ESP_OK;
+}
+
 esp_err_t neighbour_update(const uint8_t *address, int64_t timestamp_us, const neighbour_advertisement_t *adv) {
 	neighbour_t *neigh = find_neighbour(address);
 	if (!neigh) {
 		ESP_LOGI(TAG, "New neighbour "MACSTR, MAC2STR(address));
-		neigh = calloc(1, sizeof(neighbour_t));
-		if (!neigh) {
-			return ESP_ERR_NO_MEM;
+		esp_err_t err = add_new_neighbour(&neigh, address);
+		if (err) {
+			ESP_LOGW(TAG, "Failed to add neighbour: %d", err);
+			return err;
 		}
-		INIT_LIST_HEAD(neigh->list);
-		memcpy(neigh->address, address, sizeof(neigh->address));
-		neigh->local_to_remote_time_offset = 0;
-		neigh->location.x = esp_random() >> (32 - 1 - FIXEDPOINT_BASE);
-		neigh->location.y = esp_random() >> (32 - 1 - FIXEDPOINT_BASE);
-		neigh->location.z = esp_random() >> (32 - 1 - FIXEDPOINT_BASE);
-		neigh->velocity.x = 0;
-		neigh->velocity.y = 0;
-		neigh->velocity.z = 0;
-		taskENTER_CRITICAL(&neighbours.lock);
-		LIST_APPEND(&neigh->list, &neighbours.neighbours);
-		taskEXIT_CRITICAL(&neighbours.lock);
 	}
 
 	neigh->last_local_adv_rx_timestamp_us = timestamp_us;
@@ -138,27 +198,52 @@ esp_err_t neighbour_rx(const wireless_packet_t *packet) {
 }
 
 static neighbour_rssi_info_t *neighbour_find_rssi_report(const neighbour_t *neigh, const uint8_t *address) {
+	bool is_local_address = wireless_is_local_address(address);
+
+	ESP_LOGV(TAG, "Looking up RSSI report for "MACSTR" on "MACSTR, MAC2STR(address), MAC2STR(neigh->address));
+
 	for (unsigned i = 0; i < neigh->num_rssi_reports; i++) {
 		neighbour_rssi_info_t *report = &neigh->neighbour_rssi_reports[i];
-		if (!memcmp(address, report->address, sizeof(report->address))) {
-			return report;
+		ESP_LOGV(TAG, "Report %u has local node id %u", i, report->local_node_id);
+		if (report->local_node_id) {
+			if (report->local_node_id == LOCAL_NODE_ID_SELF) {
+				if (is_local_address) {
+					return report;
+				}
+			} else {
+				neighbour_t *report_neigh = get_tlb_entry_by_local_node_id(report->local_node_id);
+				if (report_neigh) {
+					ESP_LOGV(TAG, "Report %u has address "MACSTR, i, MAC2STR(report_neigh->address));
+					if (!memcmp(address, report_neigh->address, sizeof(report_neigh->address))) {
+						return report;
+					}
+				} else {
+					ESP_LOGW(TAG, "Neighbour for local node id %u not found. This should not happen.", report->local_node_id);
+				}
+			}
 		}
 	}
 
 	return NULL;
 }
 
-esp_err_t neighbour_add_rssi_report(neighbour_t *neigh, const neighbour_rssi_info_t *new_report) {
-	const uint8_t *bcast_addr = wireless_get_broadcast_address();
+esp_err_t neighbour_add_rssi_report(neighbour_t *neigh, neighbour_t *report_neigh, int rssi) {
+	unsigned int local_node_id = LOCAL_NODE_ID_SELF;
+	if (report_neigh) {
+		local_node_id = report_neigh->local_node_id;
+		ESP_LOGD(TAG, "Storing RSSI report from "MACSTR" for "MACSTR" (%u)", MAC2STR(neigh->address), MAC2STR(report_neigh->address), local_node_id);
+	} else {
+		ESP_LOGD(TAG, "Storing RSSI report from "MACSTR" for self (%u)", MAC2STR(neigh->address), local_node_id);
+	}
 
-	// Try finding an entry that is not used anymore
+	// Try finding an entry that is not used
 	for (unsigned i = 0; i < neigh->num_rssi_reports; i++) {
 		neighbour_rssi_info_t *report = &neigh->neighbour_rssi_reports[i];
 
-		if (wireless_is_broadcast_address(report->address)) {
-			ESP_LOGD(TAG, "Storing new RSSI report in preallocated entry");
-			memcpy(report->address, new_report->address, sizeof(report->address));
-			report->rssi = new_report->rssi;
+		if (!report->local_node_id) {
+			ESP_LOGV(TAG, "Storing new RSSI report in preallocated entry");
+			report->local_node_id = local_node_id;
+			report->rssi = rssi;
 			return ESP_OK;
 		}
 	}
@@ -185,13 +270,13 @@ esp_err_t neighbour_add_rssi_report(neighbour_t *neigh, const neighbour_rssi_inf
 	// Store new report
 	ESP_LOGD(TAG, "Storing new RSSI report in reallocated array");
 	neighbour_rssi_info_t *report = &neigh->neighbour_rssi_reports[neigh->num_rssi_reports];
-	memcpy(report->address, new_report->address, sizeof(report->address));
-	report->rssi = new_report->rssi;
+	report->local_node_id = local_node_id;
+	report->rssi = rssi;
 
 	// Initialize trailing reports
 	for (unsigned int i = neigh->num_rssi_reports + 1; i < new_num_rssi_reports; i++) {
 		neighbour_rssi_info_t *report = &neigh->neighbour_rssi_reports[i];
-		memcpy(report->address, bcast_addr, sizeof(report->address));
+		report->local_node_id = 0;
 	}
 	neigh->num_rssi_reports = new_num_rssi_reports;
 
@@ -199,7 +284,7 @@ esp_err_t neighbour_add_rssi_report(neighbour_t *neigh, const neighbour_rssi_inf
 }
 
 esp_err_t neighbour_update_rssi_reports(const uint8_t *address, const neighbour_rssi_info_packet_t *info, const void *payload) {
-	const neighbour_rssi_info_t *reports = payload;
+	const neighbour_rssi_packet_info_t *reports = payload;
 	neighbour_t *neigh = find_neighbour(address);
 
 	if (!neigh) {
@@ -207,19 +292,22 @@ esp_err_t neighbour_update_rssi_reports(const uint8_t *address, const neighbour_
 	}
 
 	for (unsigned int i = 0; i < info->num_rssi_reports; i++) {
-		const neighbour_rssi_info_t *report = &reports[i];
+		const neighbour_rssi_packet_info_t *report = &reports[i];
 		if (wireless_is_broadcast_address(report->address)) {
 			continue;
 		}
 
 		neighbour_rssi_info_t *old_report = neighbour_find_rssi_report(neigh, report->address);
 		if (old_report) {
-			ESP_LOGD(TAG, "Updating old RSSI report");
+			ESP_LOGV(TAG, "Updating old RSSI report");
 			old_report->rssi = report->rssi;
-		} else if (find_neighbour(report->address) || wireless_is_local_address(report->address)) {
-			esp_err_t err = neighbour_add_rssi_report(neigh, report);
-			if (err) {
-				return err;
+		} else {
+			neighbour_t *report_neigh = find_neighbour(report->address);
+			if (report_neigh || wireless_is_local_address(report->address)) {
+				esp_err_t err = neighbour_add_rssi_report(neigh, report_neigh, report->rssi);
+				if (err) {
+					return err;
+				}
 			}
 		}
 	}
@@ -257,7 +345,7 @@ static esp_err_t send_next_rssi_report(void) {
 	unsigned int reports_in_packet = 0;
 	struct {
 		neighbour_rssi_info_packet_t info;
-		neighbour_rssi_info_t rssi_reports[NEIGHBOUR_MAX_REPORTS_PER_PACKET];
+		neighbour_rssi_packet_info_t rssi_reports[NEIGHBOUR_MAX_REPORTS_PER_PACKET];
 	} __attribute__((packed)) full_rssi_report_packet;
 	neighbour_t *neigh;
 	unsigned int i = 0;
@@ -265,7 +353,7 @@ static esp_err_t send_next_rssi_report(void) {
 	LIST_FOR_EACH_ENTRY(neigh, &neighbours.neighbours, list) {
 		if (i++ >= neighbours.rssi_report_index &&
 		    reports_in_packet < NEIGHBOUR_MAX_REPORTS_PER_PACKET) {
-			neighbour_rssi_info_t *report = &full_rssi_report_packet.rssi_reports[reports_in_packet];
+			neighbour_rssi_packet_info_t *report = &full_rssi_report_packet.rssi_reports[reports_in_packet];
 			memcpy(report->address, neigh->address, sizeof(report->address));
 			report->rssi = neigh->rssi;
 			reports_in_packet++;
@@ -277,7 +365,7 @@ static esp_err_t send_next_rssi_report(void) {
 		if (reports_in_packet >= NEIGHBOUR_MAX_REPORTS_PER_PACKET) {
 			break;
 		}
-		neighbour_rssi_info_t *report = &full_rssi_report_packet.rssi_reports[reports_in_packet];
+		neighbour_rssi_packet_info_t *report = &full_rssi_report_packet.rssi_reports[reports_in_packet];
 		memcpy(report->address, neigh->address, sizeof(report->address));
 		report->rssi = neigh->rssi;
 		reports_in_packet++;
@@ -292,7 +380,7 @@ static esp_err_t send_next_rssi_report(void) {
 	// Send the report
 	esp_err_t err = wireless_broadcast((const uint8_t *)&full_rssi_report_packet,
 					   sizeof(full_rssi_report_packet.info) +
-					   sizeof(neighbour_rssi_info_t) * (size_t)reports_in_packet);
+					   sizeof(neighbour_rssi_packet_info_t) * (size_t)reports_in_packet);
 	if (err) {
 		return err;
 	}
@@ -403,8 +491,8 @@ static void simulate_links(void) {
 		for (unsigned i = 0; i < neigh->num_rssi_reports; i++) {
 			neighbour_rssi_info_t *report = &neigh->neighbour_rssi_reports[i];
 
-			if (!wireless_is_broadcast_address(report->address)) {
-				neighbour_t *neigh_neigh = find_neighbour(report->address);
+			if (report->local_node_id && report->local_node_id != LOCAL_NODE_ID_SELF) {
+				neighbour_t *neigh_neigh = get_tlb_entry_by_local_node_id(report->local_node_id);
 				if (neigh_neigh) {
 					fp_t ideal_dist = rssi_distance_metric(report->rssi);
 
@@ -440,6 +528,33 @@ static void simulate_links(void) {
 	xSemaphoreGive(neighbours.rssi_report_lock);
 }
 
+static void delete_neighbour(neighbour_t *neigh) {
+	neighbour_t *neigh_rssi;
+	list_head_t *next;
+
+	taskENTER_CRITICAL(&neighbours.lock);
+	// Clear TLB entry for this node
+	set_tlb_entry_by_local_node_id(neigh->local_node_id, NULL);
+	LIST_DELETE(&neigh->list);
+	if (neigh == neighbours.clock_source) {
+		neighbours.clock_source = NULL;
+		update_clock_source();
+	}
+	taskEXIT_CRITICAL(&neighbours.lock);
+
+	// Remove all references to TLB entry from RSSI reports
+	LIST_FOR_EACH_ENTRY_SAFE(neigh_rssi, next, &neighbours.neighbours, list) {
+		for (unsigned i = 0; i < neigh_rssi->num_rssi_reports; i++) {
+			neighbour_rssi_info_t *report = &neigh_rssi->neighbour_rssi_reports[i];
+			if (report->local_node_id == neigh->local_node_id) {
+				report->local_node_id = 0;
+			}
+		}
+	}
+	free(neigh->neighbour_rssi_reports);
+	free(neigh);
+}
+
 static void neighbour_housekeeping(void *priv) {
 	int64_t now = esp_timer_get_time();
 	int64_t global_clock = get_global_clock(now, NULL);
@@ -450,15 +565,7 @@ static void neighbour_housekeeping(void *priv) {
 		int64_t age = now - neigh->last_local_adv_rx_timestamp_us;
 		if (age > NEIGHBOUR_TTL_US) {
 			ESP_LOGI(TAG, "Neighbour "MACSTR" TTL exceeded, deleting", MAC2STR(neigh->address));
-			taskENTER_CRITICAL(&neighbours.lock);
-			LIST_DELETE(&neigh->list);
-			if (neigh == neighbours.clock_source) {
-				neighbours.clock_source = NULL;
-				update_clock_source();
-			}
-			taskEXIT_CRITICAL(&neighbours.lock);
-			free(neigh->neighbour_rssi_reports);
-			free(neigh);
+			delete_neighbour(neigh);
 		} else {
 			neigh->local_to_remote_time_offset = now - get_uptime_us(neigh, now);
 		}
@@ -506,6 +613,9 @@ void neighbour_init() {
 	scheduler_task_init(&neighbours.housekeeping_task);
 	scheduler_schedule_task_relative(&neighbours.housekeeping_task, neighbour_housekeeping, NULL, MS_TO_US(0));
 	neighbours.rssi_report_index = 0;
+	neighbours.last_rssi_report_timestamp = 0;
+	neighbours.local_id_tlb_size = 0;
+	neighbours.local_id_tlb = NULL;
 }
 
 int64_t neighbour_get_global_clock_and_source(neighbour_t **src) {
@@ -614,6 +724,24 @@ unsigned int neighbour_take_rssi_reports(const neighbour_t *neigh, neighbour_rss
 	xSemaphoreTake(neighbours.rssi_report_lock, portMAX_DELAY);
 	*rssi_reports = neigh->neighbour_rssi_reports;
 	return neigh->num_rssi_reports;
+}
+
+const uint8_t *neighbour_get_address_from_rssi_report(const neighbour_rssi_info_t *report) {
+	unsigned int local_node_id = report->local_node_id;
+	if (!local_node_id) {
+		return NULL;
+	}
+
+	if (local_node_id == LOCAL_NODE_ID_SELF) {
+		return wireless_get_mac_address();
+	}
+
+	neighbour_t *neigh = get_tlb_entry_by_local_node_id(local_node_id);
+	if (!neigh) {
+		return NULL;
+	}
+
+	return neigh->address;
 }
 
 void neighbour_put_rssi_reports(void) {

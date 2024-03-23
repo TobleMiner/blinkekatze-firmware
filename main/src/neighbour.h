@@ -34,15 +34,15 @@ typedef struct neighbour_static_info_packet {
 	uint8_t firmware_sha256_hash[32];
 } __attribute__((packed)) neighbour_static_info_packet_t;
 
-typedef struct neighbour_rssi_info {
+typedef struct neighbour_rssi_packet_info {
 	uint8_t address[ESP_NOW_ETH_ALEN];
 	int8_t rssi;
-} __attribute__((packed)) neighbour_rssi_info_t;
+} __attribute__((packed)) neighbour_rssi_packet_info_t;
 
 typedef struct neighbour_rssi_info_packet {
 	uint8_t packet_type;
 	uint8_t num_rssi_reports;
-	neighbour_rssi_info_t rssi_reports[0];
+	neighbour_rssi_packet_info_t rssi_reports[0];
 } __attribute__((packed)) neighbour_rssi_info_packet_t;
 
 typedef struct neighbour_ota_info {
@@ -51,7 +51,14 @@ typedef struct neighbour_ota_info {
 	size_t update_progress;
 } neighbour_ota_info_t;
 
-typedef struct neighbour {
+typedef struct neighbour neighbour_t;
+
+typedef struct neighbour_rssi_info {
+	uint8_t local_node_id;
+	int8_t rssi;
+} neighbour_rssi_info_t;
+
+struct neighbour {
 	list_head_t list;
 	uint8_t address[ESP_NOW_ETH_ALEN];
 	int64_t last_local_adv_rx_timestamp_us;
@@ -65,7 +72,8 @@ typedef struct neighbour {
 	neighbour_rssi_info_t *neighbour_rssi_reports;
 	fp_vec3_t location;
 	fp_vec3_t velocity;
-} neighbour_t;
+	uint8_t local_node_id;
+};
 
 /* Non-threaded functions */
 void neighbour_init(void);
@@ -83,6 +91,7 @@ void neighbour_update_static_info(const neighbour_t *neigh, const neighbour_stat
 void neighbour_update_ota_info(const neighbour_t *neigh, const neighbour_ota_info_t *ota_info);
 int8_t neighbour_get_rssi(const neighbour_t *neigh);
 unsigned int neighbour_take_rssi_reports(const neighbour_t *neigh, neighbour_rssi_info_t **rssi_reports);
+const uint8_t *neighbour_get_address_from_rssi_report(const neighbour_rssi_info_t *report);
 void neighbour_put_rssi_reports(void);
 
 /* Threadsafe functions */
