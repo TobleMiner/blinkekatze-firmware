@@ -6,6 +6,7 @@
 #include <esp_err.h>
 #include <esp_now.h>
 
+#include "fp32_vec.h"
 #include "list.h"
 #include "wireless.h"
 
@@ -62,6 +63,8 @@ typedef struct neighbour {
 	int rssi;
 	unsigned int num_rssi_reports;
 	neighbour_rssi_info_t *neighbour_rssi_reports;
+	fp_vec3_t location;
+	fp_vec3_t velocity;
 } neighbour_t;
 
 /* Non-threaded functions */

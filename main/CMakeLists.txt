@@ -8,6 +8,8 @@ set(srcs
 	src/debounce.c
 	src/default_color.c
 	src/fast_hsv2rgb_32bit.c
+	src/fp32.c
+	src/fp32_vec.c
 	src/futil.c
 	src/i2c_bus.c
 	src/lis3dh.c

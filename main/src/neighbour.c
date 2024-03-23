@@ -9,6 +9,7 @@
 
 #include <esp_log.h>
 #include <esp_mac.h>
+#include <esp_random.h>
 #include <esp_timer.h>
 
 #include "ota.h"
@@ -106,6 +107,12 @@ esp_err_t neighbour_update(const uint8_t *address, int64_t timestamp_us, const n
 		INIT_LIST_HEAD(neigh->list);
 		memcpy(neigh->address, address, sizeof(neigh->address));
 		neigh->local_to_remote_time_offset = 0;
+		neigh->location.x = esp_random() >> (32 - 1 - FIXEDPOINT_BASE);
+		neigh->location.y = esp_random() >> (32 - 1 - FIXEDPOINT_BASE);
+		neigh->location.z = esp_random() >> (32 - 1 - FIXEDPOINT_BASE);
+		neigh->velocity.x = 0;
+		neigh->velocity.y = 0;
+		neigh->velocity.z = 0;
 		taskENTER_CRITICAL(&neighbours.lock);
 		LIST_APPEND(&neigh->list, &neighbours.neighbours);
 		taskEXIT_CRITICAL(&neighbours.lock);
@@ -296,6 +303,143 @@ static esp_err_t send_next_rssi_report(void) {
 	return ESP_OK;
 }
 
+static fp_t rssi_distance_metric(int rssi) {
+	if (rssi >= 0) {
+		return 0;
+	}
+	fp_t rssi_fp = int_to_fp(-rssi);
+	fp_t rssi_scaled = fp_div(rssi_fp, int_to_fp(10));
+	return fp_exp(rssi_scaled);
+}
+
+static void calculate_force(fp_vec3_t *force_out, const fp_vec3_t *pos_a, const fp_vec3_t *pos_b, fp_t target_distance) {
+	// Figure out how far neighbour should be away from us
+	fp_vec3_t delta_pos = *pos_b;
+	fp_vec3_sub(&delta_pos, pos_a);
+	fp_t current_dist = fp_vec3_mag(&delta_pos);
+	fp_t delta_dist = target_distance - current_dist;
+
+	// Get normalized direction vector from pos_a to pos_b
+	fp_vec3_t dir_a_to_b_norm = delta_pos;
+	fp_vec3_div(&dir_a_to_b_norm, fp_vec3_mag(&dir_a_to_b_norm));
+
+	// Turn normalized vector into desired location
+	fp_vec3_t ideal_location = dir_a_to_b_norm;
+	fp_vec3_mul(&ideal_location, target_distance);
+	fp_vec3_add(&ideal_location, pos_a);
+
+	// Calculate force magnitude
+	fp_t clamped_dist = delta_dist;
+	if (fp_abs(clamped_dist) > int_to_fp(5)) {
+		clamped_dist = int_to_fp(5);
+	}
+	fp_t force_attract = fp_mul(clamped_dist, clamped_dist);
+
+	// Get normalized direction vector from neighbour to ideal location
+	fp_vec3_t dir_to_ideal = ideal_location;
+	fp_vec3_sub(&dir_to_ideal, pos_b);
+	fp_vec3_t dir_to_ideal_norm = dir_to_ideal;
+	fp_vec3_div(&dir_to_ideal_norm, fp_vec3_mag(&dir_to_ideal_norm));
+
+	// Scale normalized vector to ideal to obtain force
+	fp_vec3_t force = dir_to_ideal_norm;
+	fp_vec3_mul(&force, force_attract);
+
+	*force_out = force;
+}
+
+static void simulate_links(void) {
+	xSemaphoreTake(neighbours.rssi_report_lock, portMAX_DELAY);
+	// Simulate direct neighbours
+	neighbour_t *neigh;
+//	ESP_LOGI(TAG, "====================NEIGH========================");
+	LIST_FOR_EACH_ENTRY(neigh, &neighbours.neighbours, list) {
+		int rssi = neigh->rssi;
+		const neighbour_rssi_info_t *rssi_report = neighbour_find_rssi_report(neigh, wireless_get_mac_address());
+		if (rssi_report) {
+			rssi = DIV_ROUND(rssi + rssi_report->rssi, 2);
+		}
+
+		// Figure out how far neighbour should be away from us
+		fp_t ideal_dist = rssi_distance_metric(rssi);
+/*
+		fp_t current_dist = fp_vec3_mag(&neigh->location);
+		fp_t delta_dist = ideal_dist - current_dist;
+
+		// Get normalized direction vector from origin to neighbour
+		fp_vec3_t dir_origin_to_neigh = neigh->location;
+		fp_vec3_t dir_origin_to_neigh_norm = dir_origin_to_neigh;
+		fp_vec3_div(&dir_origin_to_neigh_norm, fp_vec3_mag(&dir_origin_to_neigh_norm));
+
+		// Turn normalized vector into desired location
+		fp_vec3_t ideal_location = dir_origin_to_neigh_norm;
+		fp_vec3_mul(&ideal_location, ideal_dist);
+
+		// Calculate force magnitude
+		fp_t clamped_dist = delta_dist;
+		if (clamped_dist > int_to_fp(5)) {
+			clamped_dist = int_to_fp(5);
+		}
+		fp_t force_attract = fp_mul(clamped_dist, clamped_dist);
+
+		// Get normalized direction vector from neighbour to ideal location
+		fp_vec3_t dir_to_origin = ideal_location;
+		fp_vec3_sub(&dir_to_origin, &neigh->location);
+		fp_vec3_t dir_to_origin_norm = dir_to_origin;
+		fp_vec3_div(&dir_to_origin_norm, fp_vec3_mag(&dir_to_origin_norm));
+
+		// Scale normalized vector to origin to obtain force
+		fp_vec3_t force = dir_to_origin_norm;
+		fp_vec3_mul(&force, force_attract);
+
+		ESP_LOGI(TAG, MACSTR" force "FPVEC3STR, MAC2STR(neigh->address), FPVEC32STR(force));
+*/
+		fp_vec3_t origin = { 0, 0, 0 };
+		fp_vec3_t force;
+		calculate_force(&force, &origin, &neigh->location, ideal_dist);
+
+//		ESP_LOGI(TAG, MACSTR" force "FPVEC3STR, MAC2STR(neigh->address), FPVEC32STR(force));
+
+		for (unsigned i = 0; i < neigh->num_rssi_reports; i++) {
+			neighbour_rssi_info_t *report = &neigh->neighbour_rssi_reports[i];
+
+			if (!wireless_is_broadcast_address(report->address)) {
+				neighbour_t *neigh_neigh = find_neighbour(report->address);
+				if (neigh_neigh) {
+					fp_t ideal_dist = rssi_distance_metric(report->rssi);
+
+					fp_vec3_t force_neigh;
+					calculate_force(&force_neigh, &neigh_neigh->location, &neigh->location, ideal_dist);
+//					ESP_LOGI(TAG, MACSTR" force "FPVEC3STR, MAC2STR(neigh->address), FPVEC32STR(force_neigh));
+					fp_vec3_t dist_vec = neigh->location;
+					fp_vec3_sub(&dist_vec, &neigh_neigh->location);
+//					ESP_LOGI(TAG, MACSTR" loc "FPVEC3STR", vel "FPVEC3STR", ideal dist "FPSTR", current dist "FPSTR, MAC2STR(neigh->address),
+//					         FPVEC32STR(neigh->location), FPVEC32STR(neigh->velocity), FP2STR(ideal_dist), FP2STR(fp_vec3_mag(&dist_vec)));
+					fp_vec3_add(&force, &force_neigh);
+				}
+			}
+		}
+
+		// Add applied force as acceleration to velocity (mass = 1)
+		fp_vec3_add(&neigh->velocity, &force);
+
+		// Limit velocity to ensure it remains manageable within the confines of the simulation
+		fp_t velocity_mag = fp_vec3_mag(&neigh->velocity);
+		if (velocity_mag > int_to_fp(10)) {
+			fp_vec3_div(&neigh->velocity, velocity_mag);
+			fp_vec3_mul(&neigh->velocity, int_to_fp(10));
+		}
+
+		fp_vec3_add(&neigh->location, &neigh->velocity);
+
+//		ESP_LOGI(TAG, MACSTR" loc "FPVEC3STR", vel "FPVEC3STR", ideal dist "FPSTR", current dist "FPSTR, MAC2STR(neigh->address),
+//			 FPVEC32STR(neigh->location), FPVEC32STR(neigh->velocity), FP2STR(ideal_dist), FP2STR(fp_vec3_mag(&neigh->location)));
+		printf(MACSTR", "FPSTR", "FPSTR", "FPSTR"\n", MAC2STR(neigh->address), FP2STR(neigh->location.x), FP2STR(neigh->location.y), FP2STR(neigh->location.z));
+	}
+
+	xSemaphoreGive(neighbours.rssi_report_lock);
+}
+
 static void neighbour_housekeeping(void *priv) {
 	int64_t now = esp_timer_get_time();
 	int64_t global_clock = get_global_clock(now, NULL);
@@ -341,6 +485,8 @@ static void neighbour_housekeeping(void *priv) {
 		}
 		neighbours.last_rssi_report_timestamp = esp_timer_get_time();
 	}
+
+	simulate_links();
 
 	if (neighbour_has_neighbours()) {
 		status_led_set_mode(STATUS_LED_GREEN, STATUS_LED_MODE_ON);
