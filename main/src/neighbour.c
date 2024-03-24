@@ -512,6 +512,11 @@ static void simulate_links(void) {
 		// Add applied force as acceleration to velocity (mass = 1)
 		fp_vec3_add(&neigh->velocity, &force);
 
+//		ESP_LOGI(TAG, MACSTR" loc "FPVEC3STR", vel "FPVEC3STR", ideal dist "FPSTR", current dist "FPSTR, MAC2STR(neigh->address),
+//			 FPVEC32STR(neigh->location), FPVEC32STR(neigh->velocity), FP2STR(ideal_dist), FP2STR(fp_vec3_mag(&neigh->location)));
+	}
+
+	LIST_FOR_EACH_ENTRY(neigh, &neighbours.neighbours, list) {
 		// Limit velocity to ensure it remains manageable within the confines of the simulation
 		fp_t velocity_mag = fp_vec3_mag(&neigh->velocity);
 		if (velocity_mag > int_to_fp(10)) {
@@ -519,10 +524,17 @@ static void simulate_links(void) {
 			fp_vec3_mul(&neigh->velocity, int_to_fp(10));
 		}
 
+		if (neigh->velocity.x > int_to_fp(100) || neigh->velocity.x < int_to_fp(-100) ||
+		    neigh->velocity.y > int_to_fp(100) || neigh->velocity.y < int_to_fp(-100) ||
+		    neigh->velocity.z > int_to_fp(100) || neigh->velocity.z < int_to_fp(-100)) {
+			ESP_LOGW(TAG, MACSTR" is going crazy, resetting velocity", MAC2STR(neigh->address));
+			neigh->velocity.x = 0;
+			neigh->velocity.y = 0;
+			neigh->velocity.z = 0;
+		}
+
 		fp_vec3_add(&neigh->location, &neigh->velocity);
 
-//		ESP_LOGI(TAG, MACSTR" loc "FPVEC3STR", vel "FPVEC3STR", ideal dist "FPSTR", current dist "FPSTR, MAC2STR(neigh->address),
-//			 FPVEC32STR(neigh->location), FPVEC32STR(neigh->velocity), FP2STR(ideal_dist), FP2STR(fp_vec3_mag(&neigh->location)));
 		printf(MACSTR", "FPSTR", "FPSTR", "FPSTR"\n", MAC2STR(neigh->address), FP2STR(neigh->location.x), FP2STR(neigh->location.y), FP2STR(neigh->location.z));
 	}
 
