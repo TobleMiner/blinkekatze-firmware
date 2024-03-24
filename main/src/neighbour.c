@@ -417,7 +417,8 @@ static void calculate_force(fp_vec3_t *force_out, const fp_vec3_t *pos_a, const 
 	fp_vec3_add(&ideal_location, pos_a);
 
 	// Calculate force magnitude
-	fp_t clamped_dist = delta_dist;
+	fp_t scaled_dist = fp_div(delta_dist, int_to_fp(20));
+	fp_t clamped_dist = scaled_dist;
 	if (fp_abs(clamped_dist) > int_to_fp(5)) {
 		clamped_dist = int_to_fp(5);
 	}
