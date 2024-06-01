@@ -12,8 +12,11 @@
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
 
+#include "chacha20.h"
+
 #define WIRELESS_MAX_PACKET_SIZE	128
 #define WIRELESS_AP_PASSWORD_LENGTH	 16
+#define WIRELESS_ENCRYPTION_KEY_SIZE	CHACHA20_KEY_SIZE
 
 typedef enum wireless_packet_type {
 	WIRELESS_PACKET_TYPE_BONK = 0,
@@ -62,3 +65,4 @@ bool wireless_is_broadcast_address(const uint8_t *addr);
 bool wireless_is_local_address(const uint8_t *addr);
 void wireless_set_encryption_enable(bool enable);
 void wireless_set_replay_protection_enable(bool enable);
+esp_err_t wireless_set_encryption_key(const uint8_t *key, unsigned int len);

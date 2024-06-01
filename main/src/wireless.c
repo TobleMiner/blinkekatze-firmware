@@ -14,7 +14,6 @@
 #include <nvs_flash.h>
 #include <sdkconfig.h>
 
-#include "chacha20.h"
 #include "embedded_files.h"
 #include "main.h"
 #include "neighbour.h"
@@ -48,7 +47,7 @@ static const uint8_t wireless_broadcast_address[ESP_NOW_ETH_ALEN] = {
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 };
 
-static const uint8_t *wireless_encryption_key = EMBEDDED_FILE_PTR(wireless_key);
+static uint8_t wireless_encryption_key[WIRELESS_ENCRYPTION_KEY_SIZE];
 static uint32_t wireless_random_id;
 static uint32_t wireless_packet_tx_cnt = 0;
 
@@ -99,7 +98,7 @@ static void hmac_ctx_init(void) {
 		mbedtls_md_context_t *hmac = &wireless_hmac_ctx[i];
 		mbedtls_md_init(hmac);
 		mbedtls_md_setup(hmac, mbedtls_md_info_from_type(MBEDTLS_MD_SHA1), 1);
-		mbedtls_md_hmac_starts(hmac, wireless_encryption_key, 32);
+		mbedtls_md_hmac_starts(hmac, wireless_encryption_key, WIRELESS_ENCRYPTION_KEY_SIZE);
 	}
 	wireless_hmac_lock = xSemaphoreCreateCountingStatic(WIRELESS_HMAC_CTX_CNT, WIRELESS_HMAC_CTX_CNT, &wireless_hmac_lock_buffer);
 }
@@ -383,6 +382,8 @@ esp_err_t wireless_init() {
 		return err;
 	}
 
+	const uint8_t *default_wireless_encryption_key = EMBEDDED_FILE_PTR(wireless_key);
+	wireless_set_encryption_key(default_wireless_encryption_key, WIRELESS_ENCRYPTION_KEY_SIZE);
 	wireless_random_id = esp_random();
 	hmac_ctx_init();
 
@@ -523,4 +524,12 @@ void wireless_set_encryption_enable(bool enable) {
 
 void wireless_set_replay_protection_enable(bool enable) {
 	replay_protection_enabled = enable;
+}
+
+esp_err_t wireless_set_encryption_key(const uint8_t *key, unsigned int len) {
+	if (len != WIRELESS_ENCRYPTION_KEY_SIZE) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	memcpy(wireless_encryption_key, key, len);
+	return ESP_OK;
 }
