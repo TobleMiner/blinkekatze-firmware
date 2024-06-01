@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define CHACHA20_KEY_SIZE	32
+
 typedef struct chacha20_ctx {
 	uint32_t keystream32[16];
 	size_t position;
