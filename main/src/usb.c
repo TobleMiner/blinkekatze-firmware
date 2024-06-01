@@ -24,6 +24,7 @@ scheduler_task_t usb_update_task;
 shared_config_t usb_shared_cfg;
 
 static void usb_enable_update(void) {
+	ESP_LOGI(TAG, "USB enable: %d, USB enable override: %d", usb_enable, usb_enable_override);
 	if (usb_enable || usb_enable_override) {
 		SET_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_USB_PAD_ENABLE);
 	} else {
@@ -65,6 +66,11 @@ void usb_init() {
 	scheduler_task_init(&usb_update_task);
 	scheduler_schedule_task_relative(&usb_update_task, usb_update, NULL, MS_TO_US(100));
 }
+
+void usb_reapply_enable(void) {
+	usb_enable_update();
+}
+
 
 static void usb_set_enable_(bool enable) {
 	usb_enable = enable;

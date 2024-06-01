@@ -354,6 +354,9 @@ void app_main(void) {
 
 	shell_init(&bonk);
 
+	// Configuring a shell on usb messes with the USB IOMUX
+	usb_reapply_enable();
+
 	unsigned loop_interval_ms = 20;
 	bool transaction_pending = false;
 	uint64_t loops = 0;

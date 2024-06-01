@@ -5,6 +5,7 @@
 #include "wireless.h"
 
 void usb_init(void);
+void usb_reapply_enable(void);
 
 void usb_set_enable(bool enable);
 
