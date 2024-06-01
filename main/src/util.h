@@ -79,6 +79,7 @@ void strntr(char* str, size_t len, char a, char b);
 	(((nib) & 0x0f) < 10 ? '0' + ((nib) & 0x0f) : 'a' + ((nib) & 0x0f) - 10)
 
 ssize_t hex_decode_inplace(uint8_t *ptr, size_t len);
+ssize_t hex_decode(uint8_t *outptr, size_t outlen, const char *inptr, size_t inlen);
 ssize_t hex_encode(const uint8_t *src, size_t src_len, char *dst, size_t dst_len);
 
 esp_err_t xlate_err(int err);

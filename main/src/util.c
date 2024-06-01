@@ -12,6 +12,26 @@ void strntr(char* str, size_t len, char a, char b) {
   }
 }
 
+ssize_t hex_decode(uint8_t *outptr, size_t outlen, const char *inptr, size_t inlen) {
+	uint8_t *dst = outptr;
+	size_t i;
+
+	if (inlen % 2) {
+		return -EINVAL;
+	}
+
+	if (outlen < inlen / 2) {
+		return -EINVAL;
+	}
+
+	for (i = 0; i < inlen; i += 2) {
+		*outptr++ = hex_to_byte(inptr);
+		inptr += 2;
+	}
+
+	return inlen / 2;
+}
+
 ssize_t hex_decode_inplace(uint8_t *ptr, size_t len) {
 	uint8_t *dst = ptr;
 	size_t i;
