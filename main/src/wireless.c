@@ -93,14 +93,24 @@ static void hmac_put(int hmac_idx) {
 	xSemaphoreGive(wireless_hmac_lock);
 }
 
-static void hmac_ctx_init(void) {
+static void hmac_ctx_reinit(void) {
+	for (int i = 0; i < WIRELESS_HMAC_CTX_CNT; i++) {
+		xSemaphoreTake(wireless_hmac_lock, portMAX_DELAY);
+	}
 	for (int i = 0; i < WIRELESS_HMAC_CTX_CNT; i++) {
 		mbedtls_md_context_t *hmac = &wireless_hmac_ctx[i];
 		mbedtls_md_init(hmac);
 		mbedtls_md_setup(hmac, mbedtls_md_info_from_type(MBEDTLS_MD_SHA1), 1);
 		mbedtls_md_hmac_starts(hmac, wireless_encryption_key, WIRELESS_ENCRYPTION_KEY_SIZE);
 	}
+	for (int i = 0; i < WIRELESS_HMAC_CTX_CNT; i++) {
+		xSemaphoreGive(wireless_hmac_lock);
+	}
+}
+
+static void hmac_ctx_init(void) {
 	wireless_hmac_lock = xSemaphoreCreateCountingStatic(WIRELESS_HMAC_CTX_CNT, WIRELESS_HMAC_CTX_CNT, &wireless_hmac_lock_buffer);
+	hmac_ctx_reinit();
 }
 
 static void packet_generate_hmac(uint8_t *dst, const uint8_t *src, size_t len) {
@@ -383,7 +393,7 @@ esp_err_t wireless_init() {
 	}
 
 	const uint8_t *default_wireless_encryption_key = EMBEDDED_FILE_PTR(wireless_key);
-	wireless_set_encryption_key(default_wireless_encryption_key, WIRELESS_ENCRYPTION_KEY_SIZE);
+	memcpy(wireless_encryption_key, default_wireless_encryption_key, WIRELESS_ENCRYPTION_KEY_SIZE);
 	wireless_random_id = esp_random();
 	hmac_ctx_init();
 
@@ -531,5 +541,6 @@ esp_err_t wireless_set_encryption_key(const uint8_t *key, unsigned int len) {
 		return ESP_ERR_INVALID_ARG;
 	}
 	memcpy(wireless_encryption_key, key, len);
+	hmac_ctx_reinit();
 	return ESP_OK;
 }
