@@ -19,6 +19,7 @@
 #include "uid.h"
 #include "usb.h"
 #include "util.h"
+#include "wireless.h"
 
 static const char *TAG = "repl";
 
@@ -836,6 +837,40 @@ static int battery_storage_mode(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_str *key;
+	struct arg_end *end;
+} wireless_key_args;
+
+static int wireless_encryption_key(int argc, char **argv) {
+	wireless_key_args.key->sval[0] = "";
+
+	int errors = arg_parse(argc, argv, (void **)&wireless_key_args);
+	if (errors) {
+		arg_print_errors(stderr, wireless_key_args.end, argv[0]);
+		return 1;
+	}
+
+	uint8_t key[WIRELESS_ENCRYPTION_KEY_SIZE];
+	ssize_t decoded_len_or_err = hex_decode(key, sizeof(key), wireless_key_args.key->sval[0], strlen(wireless_key_args.key->sval[0]));
+	if (decoded_len_or_err < 0) {
+		esp_err_t err = decoded_len_or_err;
+		fprintf(stderr, "Failed to decode wireless key: %d\r\n", err);
+		return 1;
+	}
+
+	main_loop_lock();
+	unsigned int decoded_len = decoded_len_or_err;
+	esp_err_t err = wireless_set_encryption_key(key, decoded_len);
+	main_loop_unlock();
+	if (err) {
+		fprintf(stderr, "Failed to set wireless key: %d\r\n", err);
+		return 1;
+	}
+
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -1087,6 +1122,23 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 "Enable or disable battery storage mode",
 			 battery_storage_mode,
 			 &battery_storage_mode_args);
+
+	battery_storage_mode_args.soc = arg_int0("s", "soc", "soc", "Target SoC");
+	battery_storage_mode_args.enable = arg_str1(NULL, NULL, "on|off", "Disable/enable battery storage mode");
+	battery_storage_mode_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("battery_storage_mode",
+			 "Enable or disable battery storage mode",
+			 battery_storage_mode,
+			 &battery_storage_mode_args);
+
+	wireless_key_args.key = arg_str1(NULL, NULL, "key", "Hex encoded "XSTRINGIFY(WIRELES_KEY_SIZE)" byte key");
+	wireless_key_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("wireless_encryption_key",
+			 "Set wireless encryption key",
+			 wireless_encryption_key,
+			 &wireless_key_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);
