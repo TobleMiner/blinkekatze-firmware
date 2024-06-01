@@ -34,7 +34,7 @@ this step is omitted runtime and remaining capacity estimations will be signific
 # Dependencies
 
 The Blinkekatze firmware is based on the esp-idf development framework.
-In addition to esp-idf opencv-python is also required to process color calibration tables.
+In addition to esp-idf pypng is also required to process color calibration tables.
 
 ## Installing esp-idf
 
