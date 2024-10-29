@@ -125,6 +125,13 @@ static void update_magnitude(bonk_t *bonk) {
 	bonk->magnitude = magnitude;
 }
 
+void bonk_trigger(bonk_t *bonk, uint32_t magnitude) {
+	int64_t now = esp_timer_get_time();
+	bonk_tx_bonk(now, magnitude);
+	process_bonk(bonk, now, magnitude);
+	ESP_LOGD(TAG, "BONK! intensity: %lu", (long unsigned int)magnitude);
+}
+
 static esp_err_t bonk_update_(bonk_t *bonk) {
 	esp_err_t err = lis3dh_update(bonk->accel);
 	if (err) {
@@ -132,11 +139,8 @@ static esp_err_t bonk_update_(bonk_t *bonk) {
 		return err;
 	}
 	if (lis3dh_has_click_been_detected(bonk->accel)) {
-		int64_t now = esp_timer_get_time();
 		uint32_t velocity_magnitude = ABS(lis3dh_get_click_velocity(bonk->accel));
-		bonk_tx_bonk(now, velocity_magnitude);
-		process_bonk(bonk, now, velocity_magnitude);
-		ESP_LOGD(TAG, "BONK! intensity: %lu", (long unsigned int)velocity_magnitude);
+		bonk_trigger(bonk, velocity_magnitude);
 	}
 	update_magnitude(bonk);
 	config_update(bonk);

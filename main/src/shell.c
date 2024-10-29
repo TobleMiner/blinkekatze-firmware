@@ -498,6 +498,27 @@ static int bonk(int argc, char **argv) {
 }
 
 static struct {
+	struct arg_int *magnitude;
+	struct arg_end *end;
+} do_bonk_args;
+
+static int do_bonk(int argc, char **argv) {
+	do_bonk_args.magnitude->ival[0] = 10000;
+
+	int errors = arg_parse(argc, argv, (void **)&do_bonk_args);
+	if (errors) {
+		arg_print_errors(stderr, do_bonk_args.end, argv[0]);
+		return 1;
+	}
+
+	main_loop_lock();
+	bonk_trigger(the_bonk, do_bonk_args.magnitude->ival[0]);
+	main_loop_unlock();
+
+	return 0;
+}
+
+static struct {
 	struct arg_int *bonk_duration_ms;
 	struct arg_end *end;
 } bonk_duration_args;
@@ -930,6 +951,14 @@ esp_err_t shell_init(bonk_t *bonk_) {
 	ADD_COMMAND("stop_serving_ota",
 		    "Stop serving own firmware via OTA",
 		    stop_serving_ota);
+
+	do_bonk_args.magnitude = arg_int0(NULL, NULL, "magnitude", "Magnitude of bonk");
+	do_bonk_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("do_bonk",
+			 "Software-controlled bonk",
+			 do_bonk,
+			 &do_bonk_args);
 
 	node_info_args.address = arg_str0(NULL, NULL, "address", "Address of target node. Local node if omitted");
 	node_info_args.end = arg_end(1);
