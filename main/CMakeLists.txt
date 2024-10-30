@@ -20,6 +20,8 @@ set(srcs
 	src/nvs.c
 	src/node_info.c
 	src/ota.c
+	src/platform_blinkekatze.c
+	src/platform.c
 	src/power_control.c
 	src/rainbow_fade.c
 	src/scheduler.c
