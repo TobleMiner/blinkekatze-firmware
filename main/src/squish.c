@@ -82,10 +82,12 @@ static void squish_tx_delayed(squish_t *squish) {
 }
 
 static esp_err_t squish_update_(squish_t *squish) {
-	esp_err_t err = spl06_update(squish->baro);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to update barometer: %d", err);
-		return err;
+	if (squish->baro) {
+		esp_err_t err = spl06_update(squish->baro);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to update barometer: %d", err);
+			return err;
+		}
 	}
 
 	int64_t now = esp_timer_get_time();
@@ -100,34 +102,36 @@ static esp_err_t squish_update_(squish_t *squish) {
 		}
 	}
 
-	int32_t pressure = spl06_get_pressure(squish->baro);
-	if (squish->num_pressure_samples < NUM_PRESSURE_SAMPLES_INIT) {
-		if (squish->num_pressure_samples == NUM_PRESSURE_SAMPLES_DISCARD) {
-			squish->pressure_at_rest_milli = (int64_t)pressure * 1000LL;
-		}
-		if (squish->num_pressure_samples > NUM_PRESSURE_SAMPLES_DISCARD) {
-			squish->pressure_at_rest_milli =
-				(squish->pressure_at_rest_milli * 8LL + (int64_t)pressure * 2LL * 1000) / 10;
-		}
-		squish->num_pressure_samples++;
-	} else {
-		int32_t delta = squish->pressure_at_rest_milli / 1000LL - pressure;
-
-		if (delta > 0) {
-			uint32_t additional_squish = delta * SQUISH_FACTOR * (delta_us / 1000) / 8192;
-			squish->local_squishedness = MIN(squish->local_squishedness + additional_squish, MAX_SQUISHEDNESS);
-			if (additional_squish >= DIV_ROUND(MAX_SQUISHEDNESS * SQUISH_MIN_CHANGE_TX_MILLI, 1000)) {
-				squish_tx_peak(squish);
+	if (squish->baro) {
+		int32_t pressure = spl06_get_pressure(squish->baro);
+		if (squish->num_pressure_samples < NUM_PRESSURE_SAMPLES_INIT) {
+			if (squish->num_pressure_samples == NUM_PRESSURE_SAMPLES_DISCARD) {
+				squish->pressure_at_rest_milli = (int64_t)pressure * 1000LL;
 			}
+			if (squish->num_pressure_samples > NUM_PRESSURE_SAMPLES_DISCARD) {
+				squish->pressure_at_rest_milli =
+					(squish->pressure_at_rest_milli * 8LL + (int64_t)pressure * 2LL * 1000) / 10;
+			}
+			squish->num_pressure_samples++;
+		} else {
+			int32_t delta = squish->pressure_at_rest_milli / 1000LL - pressure;
+
+			if (delta > 0) {
+				uint32_t additional_squish = delta * SQUISH_FACTOR * (delta_us / 1000) / 8192;
+				squish->local_squishedness = MIN(squish->local_squishedness + additional_squish, MAX_SQUISHEDNESS);
+				if (additional_squish >= DIV_ROUND(MAX_SQUISHEDNESS * SQUISH_MIN_CHANGE_TX_MILLI, 1000)) {
+					squish_tx_peak(squish);
+				}
+			}
+			int64_t delta_ms = delta_us / 1000LL;
+			int64_t pressure_fraction = delta_ms;
+			if (pressure_fraction > 1000) {
+				pressure_fraction = 1000;
+			}
+			int64_t pressure_max_adjust = DIV_ROUND(squish->pressure_at_rest_milli * (100LL - PRESSURE_ADJUST_PER_SECOND) + (int64_t)pressure * 1000LL * (int64_t)PRESSURE_ADJUST_PER_SECOND, 100);
+			int64_t pressure_adjust = DIV_ROUND((pressure_max_adjust - squish->pressure_at_rest_milli)  * pressure_fraction, 1000);
+			squish->pressure_at_rest_milli += pressure_adjust;
 		}
-		int64_t delta_ms = delta_us / 1000LL;
-		int64_t pressure_fraction = delta_ms;
-		if (pressure_fraction > 1000) {
-			pressure_fraction = 1000;
-		}
-		int64_t pressure_max_adjust = DIV_ROUND(squish->pressure_at_rest_milli * (100LL - PRESSURE_ADJUST_PER_SECOND) + (int64_t)pressure * 1000LL * (int64_t)PRESSURE_ADJUST_PER_SECOND, 100);
-		int64_t pressure_adjust = DIV_ROUND((pressure_max_adjust - squish->pressure_at_rest_milli)  * pressure_fraction, 1000);
-		squish->pressure_at_rest_milli += pressure_adjust;
 	}
 	squish_tx_delayed(squish);
 	squish->squishedness = MAX(squish->local_squishedness, squish_calculate_remote(squish));
