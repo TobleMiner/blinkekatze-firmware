@@ -146,6 +146,10 @@ static void reconnect_battery(void) {
 }
 
 static void battery_storage_update(void) {
+	if (!power_control.gauge || !power_control.charger) {
+		return;
+	}
+
 	int soc = bq27546_get_state_of_charge_percent(power_control.gauge);
 
 	if (soc < 0) {
@@ -235,6 +239,10 @@ static void battery_storage_update(void) {
 }
 
 static void power_control_update(void *arg) {
+	if (!power_control.gauge || !power_control.charger) {
+		return;
+	}
+
 	bool power_switch_state = gpio_get_level(GPIO_POWER_ON) || power_control.ignore_power_switch;
 	debounce_bool_update(&power_control.power_switch_debounce, power_switch_state);
 	switch (power_control.power_state) {
@@ -281,71 +289,73 @@ static void power_control_update(void *arg) {
 }
 
 esp_err_t power_control_init(bq24295_t *charger, bq27546_t *gauge) {
-	gpio_reset_pin(GPIO_CHARGE_EN);
-	gpio_set_direction(GPIO_CHARGE_EN, GPIO_MODE_OUTPUT);
-	set_charger_enable(true);
+	if (charger) {
+		gpio_reset_pin(GPIO_CHARGE_EN);
+		gpio_set_direction(GPIO_CHARGE_EN, GPIO_MODE_OUTPUT);
+		set_charger_enable(true);
 
-	gpio_reset_pin(GPIO_POWER_ON);
-	gpio_set_direction(GPIO_POWER_ON, GPIO_MODE_INPUT);
-	gpio_set_pull_mode(GPIO_POWER_ON, GPIO_PULLDOWN_ONLY);
+		gpio_reset_pin(GPIO_POWER_ON);
+		gpio_set_direction(GPIO_POWER_ON, GPIO_MODE_INPUT);
+		gpio_set_pull_mode(GPIO_POWER_ON, GPIO_PULLDOWN_ONLY);
 
-	// Enable BATFET
-	esp_err_t err = bq24295_set_shutdown(charger, false);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to enable batfet: %d", err);
-		return err;
-	}
+		// Enable BATFET
+		esp_err_t err = bq24295_set_shutdown(charger, false);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to enable batfet: %d", err);
+			return err;
+		}
 
-	// Reset charger to default settings
-	err = bq24295_reset(charger);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to reset charger: %d", err);
-		return err;
-	}
-	vTaskDelay(pdMS_TO_TICKS(10));
+		// Reset charger to default settings
+		err = bq24295_reset(charger);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to reset charger: %d", err);
+			return err;
+		}
+		vTaskDelay(pdMS_TO_TICKS(10));
 
-	// Setup charger settings
-	// Min system voltage 3.0V
-	err = bq24295_set_min_system_voltage(charger, 3000);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to set minimum system voltage: %d", err);
-		return err;
-	}
-	// Boost voltage 4.55V
-	err = bq24295_set_boost_voltage(charger, 4550);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to set LED boost voltage: %d", err);
-		return err;
-	}
-	// Set input current limit to 1A
-	err = bq24295_set_input_current_limit(charger, 1500);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to set input current limit: %d", err);
-		return err;
-	}
-	// Set charging current to 1024mA
-	err = bq24295_set_charge_current(charger, 1024);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to set charging current: %d", err);
-		return err;
-	}
-	// Terminate charge at 128mA
-	err = bq24295_set_termination_current(charger, 128);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to set charge termination current: %d", err);
-		return err;
-	}
-	// Assert battery low at 2.8V
-	err = bq24295_set_battery_low_threshold(charger, BQ24295_BATTERY_LOW_THRESHOLD_2_8V);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to set battery low threshold: %d", err);
-		return err;
-	}
-	// Recharge battery if 300mV below charging voltage after charging
-	err = bq24295_set_recharge_threshold(charger, BQ24295_RECHARGE_THRESHOLD_300MV);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to set recharge threshold: %d", err);
-		return err;
+		// Setup charger settings
+		// Min system voltage 3.0V
+		err = bq24295_set_min_system_voltage(charger, 3000);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to set minimum system voltage: %d", err);
+			return err;
+		}
+		// Boost voltage 4.55V
+		err = bq24295_set_boost_voltage(charger, 4550);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to set LED boost voltage: %d", err);
+			return err;
+		}
+		// Set input current limit to 1A
+		err = bq24295_set_input_current_limit(charger, 1500);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to set input current limit: %d", err);
+			return err;
+		}
+		// Set charging current to 1024mA
+		err = bq24295_set_charge_current(charger, 1024);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to set charging current: %d", err);
+			return err;
+		}
+		// Terminate charge at 128mA
+		err = bq24295_set_termination_current(charger, 128);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to set charge termination current: %d", err);
+			return err;
+		}
+		// Assert battery low at 2.8V
+		err = bq24295_set_battery_low_threshold(charger, BQ24295_BATTERY_LOW_THRESHOLD_2_8V);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to set battery low threshold: %d", err);
+			return err;
+		}
+		// Recharge battery if 300mV below charging voltage after charging
+		err = bq24295_set_recharge_threshold(charger, BQ24295_RECHARGE_THRESHOLD_300MV);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to set recharge threshold: %d", err);
+			return err;
+		}
 	}
 
 	power_control.charger = charger;
@@ -353,8 +363,11 @@ esp_err_t power_control_init(bq24295_t *charger, bq27546_t *gauge) {
 	power_control.battery_discharge_soc = DEFAULT_BATTERY_DISCHARGE_SOC;
 	power_control.power_state = POWER_STATE_ON;
 	power_control.battery_storage_state = BATTERY_STORAGE_STATE_CHARGING;
-	debounce_bool_init(&power_control.power_switch_debounce, 3);
-	debounce_bool_init(&power_control.power_good_debounce, 5);
+
+	if (charger) {
+		debounce_bool_init(&power_control.power_switch_debounce, 3);
+		debounce_bool_init(&power_control.power_good_debounce, 5);
+	}
 
 	scheduler_task_init(&power_control.update_task);
 	scheduler_schedule_task_relative(&power_control.update_task, power_control_update, NULL, MS_TO_US(100));
