@@ -52,15 +52,17 @@ static esp_err_t neighbour_status_update_(void) {
 	esp_err_t err = ESP_OK;
 	if (now > neighbour_status.timestamp_last_status_tx_us + MS_TO_US(NEIGHBOUR_STATUS_INTERVAL_MS)) {
 		neighbour_status_packet_t status = { .packet_type = WIRELESS_PACKET_TYPE_NEIGHBOUR_STATUS };
-		status.battery_soc_percent = MAX(bq27546_get_state_of_charge_percent(neighbour_status.gauge), -1);
-		status.battery_voltage_mv = MAX(bq27546_get_voltage_mv(neighbour_status.gauge), -1);
-		int current_ma = -32768;
-		err = bq27546_get_current_ma(neighbour_status.gauge, &current_ma);
-		status.battery_current_ma = current_ma;
-		status.battery_temperature_0_1k = bq27546_get_temperature_0_1k(neighbour_status.gauge);
-		status.battery_time_to_empty_min = MAX(bq27546_get_time_to_empty_min(neighbour_status.gauge), -1);
-		status.battery_full_charge_capacity_mah = MAX(bq27546_get_full_charge_capacity_mah(neighbour_status.gauge), -1);
-		status.battery_soh_percent = MAX(bq27546_get_state_of_health_percent(neighbour_status.gauge), -1);
+		if (neighbour_status.gauge) {
+			status.battery_soc_percent = MAX(bq27546_get_state_of_charge_percent(neighbour_status.gauge), -1);
+			status.battery_voltage_mv = MAX(bq27546_get_voltage_mv(neighbour_status.gauge), -1);
+			int current_ma = -32768;
+			err = bq27546_get_current_ma(neighbour_status.gauge, &current_ma);
+			status.battery_current_ma = current_ma;
+			status.battery_temperature_0_1k = bq27546_get_temperature_0_1k(neighbour_status.gauge);
+			status.battery_time_to_empty_min = MAX(bq27546_get_time_to_empty_min(neighbour_status.gauge), -1);
+			status.battery_full_charge_capacity_mah = MAX(bq27546_get_full_charge_capacity_mah(neighbour_status.gauge), -1);
+			status.battery_soh_percent = MAX(bq27546_get_state_of_health_percent(neighbour_status.gauge), -1);
+		}
 		wireless_broadcast((const uint8_t *)&status, sizeof(status));
 		neighbour_status.timestamp_last_status_tx_us = now;
 	}
