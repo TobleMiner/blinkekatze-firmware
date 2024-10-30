@@ -22,22 +22,26 @@ void node_info_init(bq27546_t *gauge) {
 void node_info_print_local() {
 	const uint8_t *address = wireless_get_mac_address();
 	printf("Node address:  "MACSTR"\r\n", MAC2STR(address));
-	printf("Time to empty: %dmin\r\n", (int)MAX(bq27546_get_time_to_empty_min(node_info.gauge), -1));
+	if (node_info.gauge) {
+		printf("Time to empty: %dmin\r\n", (int)MAX(bq27546_get_time_to_empty_min(node_info.gauge), -1));
+	}
 	printf("Firmware:\r\n");
 	const esp_app_desc_t *app_desc = esp_app_get_description();
 	printf("  Version:     %s\r\n", app_desc->version);
 	char firmware_hash_str[32 * 2 + 1] = { 0 };
 	hex_encode(app_desc->app_elf_sha256, sizeof(app_desc->app_elf_sha256), firmware_hash_str, sizeof(firmware_hash_str) - 1);
 	printf("  SHA256:      %s\r\n", firmware_hash_str);
-	printf("Battery:\r\n");
-	int current_ma = -32768;
-	bq27546_get_current_ma(node_info.gauge, &current_ma);
-	printf("  SoC:         %d%%\r\n", (int)MAX(bq27546_get_state_of_charge_percent(node_info.gauge), -1));
-	printf("  Voltage:     %dmV\r\n", (int)MAX(bq27546_get_voltage_mv(node_info.gauge), -1));
-	printf("  Current:     %dmA\r\n", current_ma);
-	printf("  Temperature: %d°C\r\n", DIV_ROUND((int)bq27546_get_temperature_0_1k(node_info.gauge) - 2732, 10));
-	printf("  Capacity:    %dmAh\r\n", (int)MAX(bq27546_get_full_charge_capacity_mah(node_info.gauge), -1));
-	printf("  SoH:         %d%%\r\n", (int)MAX(bq27546_get_state_of_health_percent(node_info.gauge), -1));
+	if (node_info.gauge) {
+		printf("Battery:\r\n");
+		int current_ma = -32768;
+		bq27546_get_current_ma(node_info.gauge, &current_ma);
+		printf("  SoC:         %d%%\r\n", (int)MAX(bq27546_get_state_of_charge_percent(node_info.gauge), -1));
+		printf("  Voltage:     %dmV\r\n", (int)MAX(bq27546_get_voltage_mv(node_info.gauge), -1));
+		printf("  Current:     %dmA\r\n", current_ma);
+		printf("  Temperature: %d°C\r\n", DIV_ROUND((int)bq27546_get_temperature_0_1k(node_info.gauge) - 2732, 10));
+		printf("  Capacity:    %dmAh\r\n", (int)MAX(bq27546_get_full_charge_capacity_mah(node_info.gauge), -1));
+		printf("  SoH:         %d%%\r\n", (int)MAX(bq27546_get_state_of_health_percent(node_info.gauge), -1));
+	}
 	if (power_control_is_battery_storage_mode_enabled()) {
 		printf("  Battery storage mode is enabled!\r\n");
 	}
