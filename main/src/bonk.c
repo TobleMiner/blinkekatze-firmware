@@ -133,14 +133,16 @@ void bonk_trigger(bonk_t *bonk, uint32_t magnitude) {
 }
 
 static esp_err_t bonk_update_(bonk_t *bonk) {
-	esp_err_t err = lis3dh_update(bonk->accel);
-	if (err) {
-		ESP_LOGE(TAG, "Failed to update accelerometer: %d", err);
-		return err;
-	}
-	if (lis3dh_has_click_been_detected(bonk->accel)) {
-		uint32_t velocity_magnitude = ABS(lis3dh_get_click_velocity(bonk->accel));
-		bonk_trigger(bonk, velocity_magnitude);
+	if (bonk->accel) {
+		esp_err_t err = lis3dh_update(bonk->accel);
+		if (err) {
+			ESP_LOGE(TAG, "Failed to update accelerometer: %d", err);
+			return err;
+		}
+		if (lis3dh_has_click_been_detected(bonk->accel)) {
+			uint32_t velocity_magnitude = ABS(lis3dh_get_click_velocity(bonk->accel));
+			bonk_trigger(bonk, velocity_magnitude);
+		}
 	}
 	update_magnitude(bonk);
 	config_update(bonk);
