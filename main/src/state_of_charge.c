@@ -59,7 +59,11 @@ static void state_of_charge_update(void *priv) {
 }
 
 void state_of_charge_init(bq27546_t *gauge) {
-	state_of_charge.soc = bq27546_get_state_of_charge_percent(gauge);
+	if (gauge) {
+		state_of_charge.soc = bq27546_get_state_of_charge_percent(gauge);
+	} else {
+		state_of_charge.soc = 0;
+	}
 	state_of_charge.timestamp_init = esp_timer_get_time();
 	state_of_charge.enable = false;
 	scheduler_task_init(&state_of_charge.update_task);
