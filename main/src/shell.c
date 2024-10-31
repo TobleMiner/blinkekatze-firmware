@@ -8,6 +8,7 @@
 #include <esp_system.h>
 #include <argtable3/argtable3.h>
 
+#include "color_channel_offset.h"
 #include "color_override.h"
 #include "default_color.h"
 #include "neighbour.h"
@@ -27,6 +28,7 @@ void main_loop_lock(void);
 void main_loop_unlock(void);
 
 static bonk_t *the_bonk;
+static platform_t *platform;
 
 static int serve_ota(int argc, char **argv) {
 	main_loop_lock();
@@ -892,6 +894,54 @@ static int wireless_encryption_key(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_str *address;
+	struct arg_int *channel;
+	struct arg_int *offset;
+	struct arg_end *end;
+} color_channel_zero_offset_args;
+
+static int color_channel_zero_offset(int argc, char **argv) {
+	color_channel_zero_offset_args.address->sval[0] = "";
+	color_channel_zero_offset_args.channel->ival[0] = -1;
+	color_channel_zero_offset_args.offset->ival[0] = -1;
+
+	int errors = arg_parse(argc, argv, (void **)&color_channel_zero_offset_args);
+	if (errors) {
+		arg_print_errors(stderr, color_channel_zero_offset_args.end, argv[0]);
+		return 1;
+	}
+
+	int channel = color_channel_zero_offset_args.channel->ival[0];
+	if (channel < 0) {
+		fprintf(stderr, "Channel must be >= 0\r\n");
+		return 1;
+	}
+	int offset = color_channel_zero_offset_args.channel->ival[0];
+	if (offset < 0) {
+		fprintf(stderr, "Offset must be >= 0\r\n");
+		return 1;
+	}
+
+	if (color_channel_zero_offset_args.address->sval[0] && strlen(color_channel_zero_offset_args.address->sval[0])) {
+		uint8_t address[ESP_NOW_ETH_ALEN];
+		int err = parse_mac_address(color_channel_zero_offset_args.address->sval[0], address);
+		if (err) {
+			fprintf(stderr, "'%s' is not a valid node address\r\n", color_channel_zero_offset_args.address->sval[0]);
+			return 1;
+		}
+
+		color_channel_offset_tx(channel, offset, address);
+	} else {
+		esp_err_t err = platform_set_color_channel_offset(platform, channel, offset);
+		if (err) {
+			fprintf(stderr, "'Failed to set offset on channel %d \r\n", channel);
+			return 1;
+		}
+	}
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -931,8 +981,9 @@ static void hsv_args_init(hsv_args_t *args) {
 	args->v = arg_int1(NULL, NULL, "v", "Brightness, 0 - 65535");
 }
 
-esp_err_t shell_init(bonk_t *bonk_) {
+esp_err_t shell_init(bonk_t *bonk_, platform_t *platform_) {
 	the_bonk = bonk_;
+	platform = platform_;
 
 	esp_console_repl_t *repl = NULL;
 	esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
@@ -1168,6 +1219,16 @@ esp_err_t shell_init(bonk_t *bonk_) {
 			 "Set wireless encryption key",
 			 wireless_encryption_key,
 			 &wireless_key_args);
+
+	color_channel_zero_offset_args.address = arg_str0("a", "address", "address", "Target a remote node");
+	color_channel_zero_offset_args.channel = arg_int1(NULL, NULL, "channel", "Color channel to configure");
+	color_channel_zero_offset_args.offset = arg_int1(NULL, NULL, "offset", "Offset to set");
+	color_channel_zero_offset_args.end = arg_end(2);
+
+	ADD_COMMAND_ARGS("color_zero_offset",
+			 "Set zero offset on color channel",
+			 color_channel_zero_offset,
+			 &color_channel_zero_offset_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);

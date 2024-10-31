@@ -110,7 +110,7 @@ void app_main(void) {
 
 	state_of_charge_init(platform->gauge);
 
-	shell_init(&bonk);
+	shell_init(&bonk, platform);
 
 	unsigned loop_interval_ms = 20;
 	uint64_t loops = 0;
@@ -173,7 +173,9 @@ void app_main(void) {
 						neighbour_rx_rssi_info(&packet);
 						break;
 					default:
-						ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
+						if (!platform_handle_packet(platform, packet_type, &packet)) {
+							ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
+						}
 					}
 				}
 			}

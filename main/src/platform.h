@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <esp_err.h>
@@ -10,12 +11,15 @@
 #include "ltr_303als.h"
 #include "platform.h"
 #include "spl06.h"
+#include "wireless.h"
 
 typedef struct platform platform_t;
 
 typedef struct platform_ops {
 	void (*pre_schedule)(platform_t *platform);
 	void (*set_rgb_led_color)(platform_t *platform, uint16_t r, uint16_t g, uint16_t b);
+	bool (*handle_packet)(platform_t *platform, uint8_t packet_type, const wireless_packet_t *packet);
+	esp_err_t (*set_color_channel_offset)(platform_t *platform, unsigned int channel, unsigned int offset);
 } platform_ops_t;
 
 struct platform {
@@ -31,3 +35,5 @@ void platform_init(platform_t *plat, const platform_ops_t *ops);
 esp_err_t platform_probe(platform_t **platform);
 void platform_pre_schedule(platform_t *platform);
 void platform_set_rgb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint16_t b);
+bool platform_handle_packet(platform_t *platform, uint8_t packet_type, const wireless_packet_t *packet);
+esp_err_t platform_set_color_channel_offset(platform_t *platform, unsigned int channel, unsigned int offset);
