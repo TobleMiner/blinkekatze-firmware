@@ -148,3 +148,15 @@ void settings_set_usb_enable_override(bool enable) {
 bool settings_get_usb_enable_override(void) {
 	return nvs_get_bool("usb_en_override", false);
 }
+
+void settings_set_color_channel_zero_offset(unsigned int channel, unsigned int offset) {
+	char nvs_name[16];
+	snprintf(nvs_name, sizeof(nvs_name), "cc_offset_%u", channel);
+	nvs_set_uint(nvs_name, offset);
+}
+
+unsigned int settings_get_color_channel_zero_offset(unsigned int channel) {
+	char nvs_name[16];
+	snprintf(nvs_name, sizeof(nvs_name), "cc_offset_%u", channel);
+	return nvs_get_uint(nvs_name, 0);
+}
