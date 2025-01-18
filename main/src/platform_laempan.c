@@ -3,6 +3,9 @@
 #include <stdlib.h>
 
 #include <driver/ledc.h>
+#include <esp_adc/adc_oneshot.h>
+#include <esp_adc/adc_cali.h>
+#include <esp_adc/adc_cali_scheme.h>
 #include <esp_err.h>
 #include <esp_log.h>
 
@@ -196,6 +199,72 @@ void configure_ledc_channel(ledc_channel_t chan, int gpio) {
 }
 
 esp_err_t platform_laempan_probe(platform_t **ret) {
+	adc_oneshot_unit_handle_t adc1_handle;
+	adc_oneshot_unit_init_cfg_t init_config1 = {
+		.unit_id = ADC_UNIT_1,
+	};
+
+	esp_err_t err = adc_oneshot_new_unit(&init_config1, &adc1_handle);
+	if (err) {
+		return err;
+	}
+
+	adc_oneshot_chan_cfg_t config = {
+		.bitwidth = ADC_BITWIDTH_DEFAULT,
+		.atten = ADC_ATTEN_DB_11,
+	};
+	err = adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_0, &config);
+	if (err) {
+		return err;
+	}
+
+	err = adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_4, &config);
+	if (err) {
+		return err;
+	}
+
+	adc_cali_handle_t handle = NULL;
+	adc_cali_curve_fitting_config_t cali_config = {
+		.unit_id = ADC_UNIT_1,
+		.atten = ADC_ATTEN_DB_11,
+		.bitwidth = ADC_BITWIDTH_DEFAULT,
+	};
+	err = adc_cali_create_scheme_curve_fitting(&cali_config, &handle);
+	if (err) {
+		return err;
+	}
+
+	int raw_ntc;
+	int raw_vbus;
+	err = adc_oneshot_read(adc1_handle, ADC_CHANNEL_0, &raw_ntc);
+	if (err) {
+		return err;
+	}
+
+	err = adc_oneshot_read(adc1_handle, ADC_CHANNEL_4, &raw_vbus);
+	if (err) {
+		return err;
+	}
+
+	int ntc_voltage_mv;
+	int vbus_voltage_mv;
+	err = adc_cali_raw_to_voltage(handle, raw_ntc, &ntc_voltage_mv);
+	if (err) {
+		return err;
+	}
+	err = adc_cali_raw_to_voltage(handle, raw_vbus, &vbus_voltage_mv);
+	if (err) {
+		return err;
+	}
+
+	if (ntc_voltage_mv < 500 || ntc_voltage_mv > 2800) {
+		return -1;
+	}
+
+	if (vbus_voltage_mv < 400 || vbus_voltage_mv > 2182) {
+		return -1;
+	}
+
 	platform_laempan_t *laempan = calloc(1, sizeof(platform_laempan_t));
 	if (!laempan) {
 		return ESP_ERR_NO_MEM;
