@@ -8,6 +8,7 @@
 #include "lis3dh.h"
 #include "neighbour_rssi_delay_model.h"
 #include "neighbour.h"
+#include "platform.h"
 #include "scheduler.h"
 #include "shared_config.h"
 #include "wireless.h"
@@ -32,9 +33,11 @@ typedef struct bonk {
 	bool enable_decay;
 	bool enable_delay;
 	scheduler_task_t update_task;
+	unsigned int bonk_max_val;
+	unsigned int bonk_intensity_divisor;
 } bonk_t;
 
-void bonk_init(bonk_t *bonk, lis3dh_t *accel);
+void bonk_init(bonk_t *bonk, lis3dh_t *accel, platform_t *platform);
 void bonk_rx(bonk_t *bonk, const wireless_packet_t *packet, const neighbour_t *neigh);
 unsigned int bonk_get_intensity(const bonk_t *bonk);
 void bonk_apply(bonk_t *bonk, color_hsv_t *color);

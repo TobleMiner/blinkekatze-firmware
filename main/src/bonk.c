@@ -6,6 +6,7 @@
 #include <esp_timer.h>
 
 #include "main.h"
+#include "platform_laempan.h"
 #include "util.h"
 
 #define BONK_MAX_INTENSITY_THRESHOLD	20000
@@ -156,7 +157,7 @@ static void bonk_update(void *priv) {
 	scheduler_schedule_task_relative(&bonk->update_task, bonk_update, bonk, MS_TO_US(20));
 }
 
-void bonk_init(bonk_t *bonk, lis3dh_t *accel) {
+void bonk_init(bonk_t *bonk, lis3dh_t *accel, platform_t *platform) {
 	memset(bonk, 0, sizeof(*bonk));
 	bonk->accel = accel;
 	bonk->delay_model.delay_rssi_threshold = -20;
@@ -165,8 +166,12 @@ void bonk_init(bonk_t *bonk, lis3dh_t *accel) {
 	bonk->delay_model.delay_limit_us = 0;
 	bonk->bonk_duration_ms = BONK_DURATION_MS;
 	bonk->enable = true;
-	bonk->enable_decay = true;
-	bonk->enable_delay = true;
+	bonk->bonk_max_val = HSV_VAL_MAX;
+	bonk->bonk_intensity_divisor = 1;
+	if (platform_is_laempan(platform)) {
+		bonk->bonk_max_val = HSV_VAL_MAX / 4;
+		bonk->bonk_intensity_divisor = 4;
+	}
 
 	scheduler_task_init(&bonk->update_task);
 	scheduler_schedule_task_relative(&bonk->update_task, bonk_update, bonk, MS_TO_US(100));
@@ -221,7 +226,8 @@ unsigned int bonk_get_intensity(const bonk_t *bonk) {
 void bonk_apply(bonk_t *bonk, color_hsv_t *color) {
 	if (bonk->enable) {
 		uint32_t intensity = bonk_get_intensity(bonk);
-		uint32_t brightness = intensity * HSV_VAL_MAX / BONK_MAX_INTENSITY;
+		uint32_t brightness = intensity * (uint32_t)bonk->bonk_max_val / BONK_MAX_INTENSITY;
+		brightness /= bonk->bonk_intensity_divisor;
 		color->v = MIN((uint32_t)color->v + brightness, HSV_VAL_MAX);
 	}
 }

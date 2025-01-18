@@ -92,7 +92,7 @@ void app_main(void) {
 
 	neighbour_init();
 
-	bonk_init(&bonk, platform->accelerometer);
+	bonk_init(&bonk, platform->accelerometer, platform);
 
 	squish_init(&squish, platform->barometer);
 
