@@ -14,6 +14,7 @@
 #include "neighbour.h"
 #include "node_info.h"
 #include "ota.h"
+#include "platform_laempan.h"
 #include "power_control.h"
 #include "rainbow_fade.h"
 #include "state_of_charge.h"
@@ -942,6 +943,43 @@ static int color_channel_zero_offset(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_str *address;
+	struct arg_int *brightness;
+	struct arg_end *end;
+} set_white_brightness_args;
+
+static int set_white_brightness(int argc, char **argv) {
+	set_white_brightness_args.address->sval[0] = "";
+	set_white_brightness_args.brightness->ival[0] = -1;
+
+	int errors = arg_parse(argc, argv, (void **)&set_white_brightness_args);
+	if (errors) {
+		arg_print_errors(stderr, set_white_brightness_args.end, argv[0]);
+		return 1;
+	}
+
+	int brightness = set_white_brightness_args.brightness->ival[0];
+	if (brightness < 0) {
+		fprintf(stderr, "Brightness must be >= 0\r\n");
+		return 1;
+	}
+
+	if (set_white_brightness_args.address->sval[0] && strlen(set_white_brightness_args.address->sval[0])) {
+		uint8_t address[ESP_NOW_ETH_ALEN];
+		int err = parse_mac_address(set_white_brightness_args.address->sval[0], address);
+		if (err) {
+			fprintf(stderr, "'%s' is not a valid node address\r\n", set_white_brightness_args.address->sval[0]);
+			return 1;
+		}
+
+		platform_brightness_white_tx(platform, brightness, address);
+	} else {
+		platform_set_brightness_white(platform, brightness);
+	}
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -1229,6 +1267,15 @@ esp_err_t shell_init(bonk_t *bonk_, platform_t *platform_) {
 			 "Set zero offset on color channel",
 			 color_channel_zero_offset,
 			 &color_channel_zero_offset_args);
+
+	set_white_brightness_args.address = arg_str0("a", "address", "address", "Target a remote node");
+	set_white_brightness_args.brightness = arg_int1(NULL, NULL, "brightness", "Brightness to set");
+	set_white_brightness_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("set_white_brightness",
+			 "Set brightness of white channel",
+			 set_white_brightness,
+			 &set_white_brightness_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);

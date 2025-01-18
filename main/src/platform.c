@@ -69,3 +69,9 @@ esp_err_t platform_set_color_channel_offset(platform_t *platform, unsigned int c
 bool platform_is(const platform_t *platform, const char *name) {
 	return !strcmp(platform->name, name);
 }
+
+void platform_set_brightness_white(platform_t *platform, uint16_t bright) {
+	if (platform->ops->set_brightness_white) {
+		platform->ops->set_brightness_white(platform, bright);
+	}
+}

@@ -4,6 +4,7 @@
 
 #include <driver/ledc.h>
 #include <esp_err.h>
+#include <esp_log.h>
 
 #include "color.h"
 #include "embedded_files.h"
@@ -14,6 +15,13 @@ static const char *TAG = "laempan";
 #define GPIO_RED	2
 #define GPIO_GREEN	1
 #define GPIO_BLUE	3
+#define GPIO_WHITE	7
+
+typedef struct brightness_white_packet {
+	uint8_t packet_type;
+	uint16_t brightness;
+	wireless_address_t addr;
+} __attribute__((packed)) brightness_white_packet_t;
 
 static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_12bit_bin);
 //static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_32x32x32_12bit_bin);
@@ -97,7 +105,7 @@ static void apply_color_correction_per_channel(const rgb16_t *in, rgb16_t *out) 
 #define CLAMP_ADD(a, b, maxval) \
 	((maxval) - (a) <= (b) ? ((a) + (b)) : (maxval))
 
-static void set_rdb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint16_t b) {
+static void set_rgb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint16_t b) {
 	platform_laempan_t *laempan = container_of(platform, platform_laempan_t, base);
 	const rgb16_t raw = { r, g, b };
 	rgb16_t corrected;
@@ -120,12 +128,28 @@ static void set_rdb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint
 	ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, corrected.r, 0);
 	ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, corrected.g, 0);
 	ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, corrected.b, 0);
+	ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3, laempan->white_brightness);
+	ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3);
 }
 
 static esp_err_t set_color_channel_offset(platform_t *platform, unsigned int channel, unsigned int offset) {
 	platform_laempan_t *laempan = container_of(platform, platform_laempan_t, base);
 
 	return color_channel_set_offset(&laempan->cc_offset, channel, offset);
+}
+
+static void handle_brightness_white_packet(platform_laempan_t *laempan, const wireless_packet_t *packet) {
+	if (packet->len < sizeof(brightness_white_packet_t)) {
+		ESP_LOGE(TAG, "Short packet received. Expected %zu bytes but got %u bytes", sizeof(brightness_white_packet_t), packet->len);
+		return;
+	}
+
+	brightness_white_packet_t bright_packet;
+	memcpy(&bright_packet, packet->data, sizeof(bright_packet));
+	if (wireless_is_broadcast_address(bright_packet.addr) ||
+	    wireless_is_local_address(bright_packet.addr)) {
+		laempan->white_brightness = bright_packet.brightness;
+	}
 }
 
 static bool handle_packet(platform_t *platform, uint8_t packet_type, const wireless_packet_t *packet) {
@@ -136,13 +160,25 @@ static bool handle_packet(platform_t *platform, uint8_t packet_type, const wirel
 		return true;
 	}
 
+	if (packet_type == WIRELESS_PACKET_TYPE_BRIGHTNESS_WHITE) {
+		handle_brightness_white_packet(laempan, packet);
+		return true;
+	}
+
 	return false;
 }
 
+static void set_brightness_white(platform_t *platform, uint16_t bright) {
+	platform_laempan_t *laempan = container_of(platform, platform_laempan_t, base);
+
+	laempan->white_brightness = bright;
+}
+
 static const platform_ops_t laempan_ops = {
-	.set_rgb_led_color = set_rdb_led_color,
+	.set_rgb_led_color = set_rgb_led_color,
 	.set_color_channel_offset = set_color_channel_offset,
-	.handle_packet = handle_packet
+	.handle_packet = handle_packet,
+	.set_brightness_white = set_brightness_white
 };
 
 void configure_ledc_channel(ledc_channel_t chan, int gpio) {
@@ -180,9 +216,11 @@ esp_err_t platform_laempan_probe(platform_t **ret) {
 	configure_ledc_channel(LEDC_CHANNEL_0, GPIO_RED);
 	configure_ledc_channel(LEDC_CHANNEL_1, GPIO_GREEN);
 	configure_ledc_channel(LEDC_CHANNEL_2, GPIO_BLUE);
+	configure_ledc_channel(LEDC_CHANNEL_3, GPIO_WHITE);
 
 	platform_init(&laempan->base, &laempan_ops, "laempan");
 	laempan->base.default_brightness = HSV_VAL_MAX / 3;
+	laempan->white_brightness = 400;
 	*ret = &laempan->base;
 
 	return 0;
@@ -190,4 +228,19 @@ esp_err_t platform_laempan_probe(platform_t **ret) {
 
 bool platform_is_laempan(const platform_t *platform) {
 	return platform_is(platform, "laempan");
+}
+
+void platform_brightness_white_tx(platform_t *platform, uint16_t brightness, const uint8_t *address) {
+	brightness_white_packet_t bright_packet = {
+		WIRELESS_PACKET_TYPE_BRIGHTNESS_WHITE,
+		brightness,
+		{ }
+	};
+	memcpy(bright_packet.addr, address, sizeof(wireless_address_t));
+
+	if (wireless_is_broadcast_address(bright_packet.addr) ||
+	    wireless_is_local_address(bright_packet.addr)) {
+		platform_set_brightness_white(platform, brightness);
+	}
+	wireless_broadcast((const uint8_t *)&bright_packet, sizeof(bright_packet));
 }
