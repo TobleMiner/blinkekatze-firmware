@@ -158,5 +158,5 @@ void settings_set_color_channel_zero_offset(unsigned int channel, unsigned int o
 unsigned int settings_get_color_channel_zero_offset(unsigned int channel) {
 	char nvs_name[16];
 	snprintf(nvs_name, sizeof(nvs_name), "cc_offset_%u", channel);
-	return nvs_get_uint(nvs_name, 0);
+	return nvs_get_uint(nvs_name, 20);
 }
