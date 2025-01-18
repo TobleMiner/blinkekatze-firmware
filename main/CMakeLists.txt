@@ -45,7 +45,7 @@ set(srcs
 
 idf_component_register(SRCS ${srcs}
 		       INCLUDE_DIRS "src"
-		       EMBED_FILES ${BUILD_DIR}/colorcal_16x16x16_12bit.bin ${BUILD_DIR}/colorcal_32x32x32_12bit.bin ${PROJECT_DIR}/main/assets/wireless_key)
+		       EMBED_FILES ${BUILD_DIR}/colorcal_16x16x16_11bit.bin ${BUILD_DIR}/colorcal_16x16x16_12bit.bin ${BUILD_DIR}/colorcal_32x32x32_12bit.bin ${PROJECT_DIR}/main/assets/wireless_key)
 
 add_custom_command(OUTPUT ${BUILD_DIR}/bq27546_inr18650_df.c
 		   COMMAND ${PROJECT_DIR}/tools/flash_stream_to_c.py ${CMAKE_CURRENT_LIST_DIR}/assets/bq27546_INR18650-35E.df.fs ${BUILD_DIR}/bq27546_inr18650_df.c bq27546_inr18650_dataflash
@@ -55,6 +55,11 @@ add_custom_target(gauge_dataflash DEPENDS ${BUILD_DIR}/bq27546_inr18650_df.c)
 add_dependencies(${COMPONENT_LIB} gauge_dataflash)
 set_property(DIRECTORY "${COMPONENT_DIR}" APPEND PROPERTY
 	     ADDITIONAL_CLEAN_FILES ${BUILD_DIR}/bq27546_inr18650_df.c)
+
+add_custom_command(OUTPUT ${BUILD_DIR}/colorcal_16x16x16_11bit.bin
+		   COMMAND ${PROJECT_DIR}/tools/displaycal_to_bin.py 65535 ${CMAKE_CURRENT_LIST_DIR}/assets/blinkekatze_rev1.0_cal_16x16x16_16bit.png 2047 ${BUILD_DIR}/colorcal_16x16x16_11bit.bin
+		   DEPENDS ${CMAKE_CURRENT_LIST_DIR}/assets/blinkekatze_rev1.0_cal_16x16x16_16bit.png ${PROJECT_DIR}/tools/displaycal_to_bin.py
+		   VERBATIM)
 
 add_custom_command(OUTPUT ${BUILD_DIR}/colorcal_16x16x16_12bit.bin
 		   COMMAND ${PROJECT_DIR}/tools/displaycal_to_bin.py 65535 ${CMAKE_CURRENT_LIST_DIR}/assets/blinkekatze_rev1.0_cal_16x16x16_16bit.png 4080 ${BUILD_DIR}/colorcal_16x16x16_12bit.bin
@@ -66,7 +71,7 @@ add_custom_command(OUTPUT ${BUILD_DIR}/colorcal_32x32x32_12bit.bin
 		   DEPENDS ${CMAKE_CURRENT_LIST_DIR}/assets/blinkekatze_rev1.0_cal_32x32x32_16bit.png ${PROJECT_DIR}/tools/displaycal_to_bin.py
 		   VERBATIM)
 
-add_custom_target(colorcal_bin DEPENDS ${BUILD_DIR}/colorcal_16x16x16_12bit.bin ${BUILD_DIR}/colorcal_32x32x32_12bit.bin)
+add_custom_target(colorcal_bin DEPENDS ${BUILD_DIR}/colorcal_16x16x16_11bit.bin ${BUILD_DIR}/colorcal_16x16x16_12bit.bin ${BUILD_DIR}/colorcal_32x32x32_12bit.bin)
 add_dependencies(${COMPONENT_LIB} colorcal_bin)
 set_property(DIRECTORY "${COMPONENT_DIR}" APPEND PROPERTY
-	     ADDITIONAL_CLEAN_FILES ${BUILD_DIR}/colorcal_16x16x16_12bit.bin ${BUILD_DIR}/colorcal_32x32x32_12bit.bin)
+	     ADDITIONAL_CLEAN_FILES ${BUILD_DIR}/colorcal_16x16x16_11bit.bin ${BUILD_DIR}/colorcal_16x16x16_12bit.bin ${BUILD_DIR}/colorcal_32x32x32_12bit.bin)

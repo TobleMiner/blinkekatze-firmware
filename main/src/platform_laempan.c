@@ -10,8 +10,6 @@
 #include "embedded_files.h"
 #include "util.h"
 
-static const char *TAG = "laempan";
-
 #define GPIO_RED	2
 #define GPIO_GREEN	1
 #define GPIO_BLUE	3
@@ -23,8 +21,9 @@ typedef struct brightness_white_packet {
 	wireless_address_t addr;
 } __attribute__((packed)) brightness_white_packet_t;
 
-static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_12bit_bin);
-//static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_32x32x32_12bit_bin);
+static const char *TAG = "laempan";
+
+static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_11bit_bin);
 
 #define COLOR_TABLE_SIZE	16UL
 #define LOOKUP_DIV		((1 << 16) / COLOR_TABLE_SIZE)
@@ -103,7 +102,7 @@ static void apply_color_correction_per_channel(const rgb16_t *in, rgb16_t *out) 
 }
 
 #define CLAMP_ADD(a, b, maxval) \
-	((maxval) - (a) <= (b) ? ((a) + (b)) : (maxval))
+	((maxval) - (a) >= (b) ? ((a) + (b)) : (maxval))
 
 static void set_rgb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint16_t b) {
 	platform_laempan_t *laempan = container_of(platform, platform_laempan_t, base);
@@ -111,24 +110,23 @@ static void set_rgb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint
 	rgb16_t corrected;
 
 	apply_color_correction_per_channel(&raw, &corrected);
-	corrected.r >>= 2;
-	corrected.g >>= 2;
-	corrected.b >>= 2;
-
 	if (corrected.r) {
-		corrected.r = CLAMP_ADD(corrected.r, laempan->color_channel_offsets[0], 65535U >> 2);
+		corrected.r = CLAMP_ADD(corrected.r, laempan->color_channel_offsets[0], 65535U >> 5);
 	}
 	if (corrected.g) {
-		corrected.g = CLAMP_ADD(corrected.g, laempan->color_channel_offsets[1], 65535U >> 2);
+		corrected.g = CLAMP_ADD(corrected.g, laempan->color_channel_offsets[1], 65535U >> 5);
 	}
 	if (corrected.b) {
-		corrected.b = CLAMP_ADD(corrected.b, laempan->color_channel_offsets[2], 65535U >> 2);
+		corrected.b = CLAMP_ADD(corrected.b, laempan->color_channel_offsets[2], 65535U >> 5);
 	}
 
-	ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, corrected.r, 0);
-	ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, corrected.g, 0);
-	ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, corrected.b, 0);
+	ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, corrected.r);
+	ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, corrected.g);
+	ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, corrected.b);
 	ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3, laempan->white_brightness);
+	ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+	ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+	ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2);
 	ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3);
 }
 
@@ -207,9 +205,9 @@ esp_err_t platform_laempan_probe(platform_t **ret) {
 
 	const ledc_timer_config_t timer_cfg = {
 		.speed_mode = LEDC_LOW_SPEED_MODE,
-		.duty_resolution = LEDC_TIMER_14_BIT,
+		.duty_resolution = LEDC_TIMER_11_BIT,
 		.timer_num = LEDC_TIMER_0,
-		.freq_hz = 22000,
+		.freq_hz = 19500,
 		.clk_cfg = LEDC_AUTO_CLK
 	};
 	ESP_ERROR_CHECK(ledc_timer_config(&timer_cfg));
