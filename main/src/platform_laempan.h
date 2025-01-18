@@ -10,3 +10,4 @@ typedef struct platform_laempan {
 } platform_laempan_t;
 
 esp_err_t platform_laempan_probe(platform_t **ret);
+bool platform_is_laempan(const platform_t *platform);

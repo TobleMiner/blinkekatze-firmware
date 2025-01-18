@@ -181,8 +181,12 @@ esp_err_t platform_laempan_probe(platform_t **ret) {
 	configure_ledc_channel(LEDC_CHANNEL_1, GPIO_GREEN);
 	configure_ledc_channel(LEDC_CHANNEL_2, GPIO_BLUE);
 
-	platform_init(&laempan->base, &laempan_ops);
+	platform_init(&laempan->base, &laempan_ops, "laempan");
 	*ret = &laempan->base;
 
 	return 0;
+}
+
+bool platform_is_laempan(const platform_t *platform) {
+	return platform_is(platform, "laempan");
 }

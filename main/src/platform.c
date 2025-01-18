@@ -10,9 +10,10 @@
 
 static const char *TAG = "platform";
 
-void platform_init(platform_t *plat, const platform_ops_t *ops) {
+void platform_init(platform_t *plat, const platform_ops_t *ops, const char *name) {
 	memset(plat, 0, sizeof(*plat));
 	plat->ops = ops;
+	plat->name = name;
 }
 
 esp_err_t platform_probe(platform_t **platform) {
@@ -61,4 +62,8 @@ esp_err_t platform_set_color_channel_offset(platform_t *platform, unsigned int c
 	}
 
 	return ESP_ERR_NOT_SUPPORTED;
+}
+
+bool platform_is(const platform_t *platform, const char *name) {
+	return !strcmp(platform->name, name);
 }

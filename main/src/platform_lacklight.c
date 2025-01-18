@@ -150,7 +150,7 @@ esp_err_t platform_lacklight_probe(platform_t **ret) {
 	katze->xfer.rx_buffer = NULL;
 	ESP_ERROR_CHECK(spi_device_transmit(katze->dev, &katze->xfer));
 
-	platform_init(&katze->base, &lacklight_ops);
+	platform_init(&katze->base, &lacklight_ops, "lacklight");
 	*ret = &katze->base;
 
 	return 0;

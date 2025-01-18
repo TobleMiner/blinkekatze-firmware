@@ -318,7 +318,7 @@ esp_err_t platform_blinkekatze_probe(platform_t **ret) {
 
 	ESP_ERROR_CHECK(ltr_303als_init(&katze->als, &katze->i2c_bus));
 
-	platform_init(&katze->base, &blinkekatze_ops);
+	platform_init(&katze->base, &blinkekatze_ops, "blinkekatze");
 	katze->base.gauge = &katze->gauge;
 	katze->base.charger = &katze->charger;
 	katze->base.als = &katze->als;

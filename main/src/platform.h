@@ -9,7 +9,6 @@
 #include "bq27546.h"
 #include "lis3dh.h"
 #include "ltr_303als.h"
-#include "platform.h"
 #include "spl06.h"
 #include "wireless.h"
 
@@ -28,12 +27,14 @@ struct platform {
 	ltr_303als_t *als;
 	lis3dh_t *accelerometer;
 	spl06_t *barometer;
+	const char *name;
 	const platform_ops_t *ops;
 };
 
-void platform_init(platform_t *plat, const platform_ops_t *ops);
+void platform_init(platform_t *plat, const platform_ops_t *ops, const char *name);
 esp_err_t platform_probe(platform_t **platform);
 void platform_pre_schedule(platform_t *platform);
 void platform_set_rgb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint16_t b);
 bool platform_handle_packet(platform_t *platform, uint8_t packet_type, const wireless_packet_t *packet);
 esp_err_t platform_set_color_channel_offset(platform_t *platform, unsigned int channel, unsigned int offset);
+bool platform_is(const platform_t *platform, const char *name);
