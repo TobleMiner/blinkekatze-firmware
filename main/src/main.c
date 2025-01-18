@@ -106,7 +106,7 @@ void app_main(void) {
 
 	rainbow_fade_init();
 
-	default_color_init();
+	default_color_init(platform);
 
 	state_of_charge_init(platform->gauge);
 

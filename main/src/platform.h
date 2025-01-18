@@ -27,6 +27,7 @@ struct platform {
 	ltr_303als_t *als;
 	lis3dh_t *accelerometer;
 	spl06_t *barometer;
+	unsigned int default_brightness;
 	const char *name;
 	const platform_ops_t *ops;
 };

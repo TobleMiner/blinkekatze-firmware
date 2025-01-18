@@ -182,6 +182,7 @@ esp_err_t platform_laempan_probe(platform_t **ret) {
 	configure_ledc_channel(LEDC_CHANNEL_2, GPIO_BLUE);
 
 	platform_init(&laempan->base, &laempan_ops, "laempan");
+	laempan->base.default_brightness = HSV_VAL_MAX / 3;
 	*ret = &laempan->base;
 
 	return 0;
