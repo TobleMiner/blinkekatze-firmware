@@ -256,12 +256,22 @@ esp_err_t platform_laempan_probe(platform_t **ret) {
 	if (err) {
 		return err;
 	}
+	// VBUS is divided by 11 for ADC
+	vbus_voltage_mv *= 11;
 
-	if (ntc_voltage_mv < 500 || ntc_voltage_mv > 2800) {
+	ESP_LOGI(TAG, "NTC voltage: %d", ntc_voltage_mv);
+	ESP_LOGI(TAG, "VBUS voltage: %d", vbus_voltage_mv);
+
+	/*
+	 * NTC voltage divider is broken in first revision.
+	 * Instead of a 47k pull-up a 4.7k pull-up is populated, turning this into
+	 * a signal pulled high strongly.
+	 */
+	if (ntc_voltage_mv < 1650) {
 		return -1;
 	}
 
-	if (vbus_voltage_mv < 400 || vbus_voltage_mv > 2182) {
+	if (vbus_voltage_mv < 4000 || vbus_voltage_mv > 16000) {
 		return -1;
 	}
 
