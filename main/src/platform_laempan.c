@@ -26,7 +26,7 @@ typedef struct brightness_white_packet {
 
 static const char *TAG = "laempan";
 
-static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_11bit_bin);
+static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_laempan_16x16x16_11bit_bin);
 
 #define COLOR_TABLE_SIZE	16UL
 #define LOOKUP_DIV		((1 << 16) / COLOR_TABLE_SIZE)
@@ -112,7 +112,9 @@ static void set_rgb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint
 	const rgb16_t raw = { r, g, b };
 	rgb16_t corrected;
 
+
 	apply_color_correction_per_channel(&raw, &corrected);
+
 	if (corrected.r) {
 		corrected.r = CLAMP_ADD(corrected.r, laempan->color_channel_offsets[0], 65535U >> 5);
 	}
@@ -127,6 +129,7 @@ static void set_rgb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint
 	ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, corrected.g);
 	ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, corrected.b);
 	ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3, laempan->white_brightness);
+
 	ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 	ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
 	ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2);

@@ -23,4 +23,5 @@
 DECLARE_EMBEDDED_FILE(colorcal_16x16x16_11bit_bin);
 DECLARE_EMBEDDED_FILE(colorcal_16x16x16_12bit_bin);
 DECLARE_EMBEDDED_FILE(colorcal_32x32x32_12bit_bin);
+DECLARE_EMBEDDED_FILE(colorcal_laempan_16x16x16_11bit_bin);
 DECLARE_EMBEDDED_FILE(wireless_key);
