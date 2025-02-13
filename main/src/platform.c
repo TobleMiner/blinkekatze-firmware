@@ -26,7 +26,7 @@ static platform_def_t *platforms[] = {
 void platform_init(platform_t *plat, const platform_def_t *def) {
 	memset(plat, 0, sizeof(*plat));
 	plat->def = def;
-	plat->default_brightness = HSV_VAL_MAX / 2;
+	plat->default_brightness = HSV_VAL_MAX;
 }
 
 static esp_err_t platform_probe_(const platform_def_t *def, platform_t **platform) {
