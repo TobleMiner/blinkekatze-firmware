@@ -14,3 +14,5 @@ typedef struct color_palette {
 } color_palette_t;
 
 extern const color_palette_t rainbow_stripe_palette;
+extern const color_palette_t aurora_palette;
+extern const color_palette_t aurora2_palette;
