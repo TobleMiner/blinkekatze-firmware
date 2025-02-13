@@ -188,13 +188,14 @@ void app_main(void) {
 		}
 
 		if (events & EVENT_LED) {
-			color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 };
+			color_hsv_t hsv = { 0, HSV_SAT_MAX, HSV_VAL_MAX };
 			default_color_apply(&hsv);
 			color_t color;
 			color.format = COLOR_FORMAT_HSV16;
 			color.hsv = hsv;
 			rainbow_fade_apply(&color);
 			hsv = *color_to_hsv(&color);
+			hsv.v = DIV_ROUND(hsv.v, 2);
 //			ESP_LOGI(TAG, "HSV: %05u, %05u, %05u", hsv.h, hsv.s, hsv.v);
 			bonk_apply(&bonk, &hsv);
 			squish_apply(&squish, &hsv);
