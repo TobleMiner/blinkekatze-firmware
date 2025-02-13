@@ -166,6 +166,8 @@ void bonk_init(bonk_t *bonk, lis3dh_t *accel, platform_t *platform) {
 	bonk->delay_model.delay_limit_us = 0;
 	bonk->bonk_duration_ms = BONK_DURATION_MS;
 	bonk->enable = true;
+	bonk->enable_decay = true;
+	bonk->enable_delay = true;
 	bonk->bonk_max_val = HSV_VAL_MAX;
 	bonk->bonk_intensity_divisor = 1;
 	if (platform_is_laempan(platform)) {
