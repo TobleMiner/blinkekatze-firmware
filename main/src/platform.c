@@ -15,7 +15,7 @@ void platform_init(platform_t *plat, const platform_ops_t *ops, const char *name
 	memset(plat, 0, sizeof(*plat));
 	plat->ops = ops;
 	plat->name = name;
-	plat->default_brightness = HSV_VAL_MAX / 2;
+	plat->default_brightness = HSV_VAL_MAX;
 }
 
 esp_err_t platform_probe(platform_t **platform) {

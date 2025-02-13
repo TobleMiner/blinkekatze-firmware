@@ -23,7 +23,7 @@ typedef struct default_color_config_packet {
 static const char *TAG = "default_color";
 
 static default_color_t default_color = {
-	.default_color = { 0, HSV_SAT_MAX, HSV_VAL_MAX / 2 },
+	.default_color = { 0, HSV_SAT_MAX, HSV_VAL_MAX },
 	.shared_cfg = { 0 }
 };
 
