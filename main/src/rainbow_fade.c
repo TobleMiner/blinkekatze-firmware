@@ -113,7 +113,9 @@ void rainbow_fade_apply(color_t *color) {
 		ESP_LOGI(TAG, "3. HSV: %u, %u, %u", color->hsv.h, color->hsv.s, color->hsv.v);
 */
 	} else {
-		const color_palette_t *palette = &rainbow_stripe_palette;
+//		const color_palette_t *palette = &rainbow_stripe_palette;
+//		const color_palette_t *palette = &aurora_palette;
+		const color_palette_t *palette = &aurora2_palette;
 
 		neighbour_t *clock_source;
 		int64_t now = neighbour_get_global_clock_and_source(&clock_source);
