@@ -8,6 +8,7 @@
 #include "platform_blinkekatze.h"
 #include "platform_lacklight.h"
 #include "platform_laempan.h"
+#include "platform_tallylight_v2.h"
 
 static const char *TAG = "platform";
 
@@ -25,6 +26,11 @@ esp_err_t platform_probe(platform_t **platform) {
 	}
 
 	err = platform_laempan_probe(platform);
+	if (!err && *platform) {
+		return 0;
+	}
+
+	err = platform_tallylight_v2_probe(platform);
 	if (!err && *platform) {
 		return 0;
 	}

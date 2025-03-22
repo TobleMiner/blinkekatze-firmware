@@ -24,6 +24,7 @@ set(srcs
 	src/platform_blinkekatze.c
 	src/platform_lacklight.c
 	src/platform_laempan.c
+	src/platform_tallylight_v2.c
 	src/platform.c
 	src/power_control.c
 	src/rainbow_fade.c
