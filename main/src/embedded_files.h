@@ -20,6 +20,7 @@
 	extern const uint8_t binary_ ## name_ ## _start[] asm("_binary_"STR(name_)"_start"); \
 	extern const uint8_t binary_ ## name_ ## _end[] asm("_binary_"STR(name_)"_end")
 
+DECLARE_EMBEDDED_FILE(colorcal_16x16x16_9bit_bin);
 DECLARE_EMBEDDED_FILE(colorcal_16x16x16_11bit_bin);
 DECLARE_EMBEDDED_FILE(colorcal_16x16x16_12bit_bin);
 DECLARE_EMBEDDED_FILE(colorcal_32x32x32_12bit_bin);

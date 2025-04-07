@@ -15,6 +15,7 @@
 #include <soc/io_mux_reg.h>
 
 #include "color.h"
+#include "embedded_files.h"
 #include "util.h"
 
 #define REV_ID_GPIO	4
@@ -25,7 +26,7 @@
 #define NUM_LEDS	10
 #define BITS_PER_SYMBOL	4
 #define SYMBOL_ZERO	0b0001
-#define SYMBOL_ONE	0b0111
+#define SYMBOL_ONE	0b0011
 
 #define BYTES_DATA	((NUM_LEDS) * 24 * (BITS_PER_SYMBOL)) / 8
 #define BYTES_RESET	(250 / 8)
@@ -55,23 +56,119 @@ static uint8_t *led_set_color(uint8_t *data, uint8_t r, uint8_t g, uint8_t b) {
 	return data;
 }
 
+static const rgb16_t *colorcal_table = (const rgb16_t *)EMBEDDED_FILE_PTR(colorcal_16x16x16_9bit_bin);
+
+#define COLOR_TABLE_SIZE	16UL
+#define LOOKUP_DIV		((1 << 16) / COLOR_TABLE_SIZE)
+
+static void lookup_color(const rgb16_t *in, rgb16_t *out) {
+	uint32_t idx = ((in->g * COLOR_TABLE_SIZE) + in->b) * COLOR_TABLE_SIZE + in->r;
+	*out = colorcal_table[idx];
+}
+
+static void apply_color_correction_per_channel(const rgb16_t *in, rgb16_t *out) {
+	rgb16_t color_min_lookup = { in->r / LOOKUP_DIV, in->g / LOOKUP_DIV, in->b / LOOKUP_DIV };
+	rgb16_t color_ref_lookup = {
+		MIN(in->r / LOOKUP_DIV + DIV_ROUND(in->r % LOOKUP_DIV, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
+		MIN(in->g / LOOKUP_DIV + DIV_ROUND(in->g % LOOKUP_DIV, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
+		MIN(in->b / LOOKUP_DIV + DIV_ROUND(in->b % LOOKUP_DIV, LOOKUP_DIV), COLOR_TABLE_SIZE - 1),
+	};
+	rgb16_t color_lookup_r = {
+		MIN(MAX((int)color_ref_lookup.r + (color_ref_lookup.r == color_min_lookup.r ? 1 : -1), 0), COLOR_TABLE_SIZE - 1),
+		color_ref_lookup.g,
+		color_ref_lookup.b
+	};
+	rgb16_t color_lookup_g = {
+		color_ref_lookup.r,
+		MIN(MAX((int)color_ref_lookup.g + (color_ref_lookup.g == color_min_lookup.g ? 1 : -1), 0), COLOR_TABLE_SIZE - 1),
+		color_ref_lookup.b
+	};
+	rgb16_t color_lookup_b = {
+		color_ref_lookup.r,
+		color_ref_lookup.g,
+		MIN(MAX((int)color_ref_lookup.b + (color_ref_lookup.b == color_min_lookup.b ? 1 : -1), 0), COLOR_TABLE_SIZE - 1)
+	};
+	rgb16_t color_ref = {
+		color_ref_lookup.r * LOOKUP_DIV,
+		color_ref_lookup.g * LOOKUP_DIV,
+		color_ref_lookup.b * LOOKUP_DIV
+	};
+	rgb16_t color_max = {
+		color_lookup_r.r * LOOKUP_DIV,
+		color_lookup_g.g * LOOKUP_DIV,
+		color_lookup_b.b * LOOKUP_DIV
+	};
+	rgb16_t color_corrected_ref;
+	rgb16_t color_corrected_r;
+	rgb16_t color_corrected_g;
+	rgb16_t color_corrected_b;
+	lookup_color(&color_ref_lookup, &color_corrected_ref);
+	lookup_color(&color_lookup_r, &color_corrected_r);
+	lookup_color(&color_lookup_g, &color_corrected_g);
+	lookup_color(&color_lookup_b, &color_corrected_b);
+
+	int32_t delta_in_r = (int32_t)in->r - (int32_t)color_ref.r;
+	int32_t delta_in_g = (int32_t)in->g - (int32_t)color_ref.g;
+	int32_t delta_in_b = (int32_t)in->b - (int32_t)color_ref.b;
+	int32_t delta_ref_r = (int32_t)color_max.r - (int32_t)color_ref.r;
+	int32_t delta_ref_g = (int32_t)color_max.g - (int32_t)color_ref.g;
+	int32_t delta_ref_b = (int32_t)color_max.b - (int32_t)color_ref.b;
+	rgb16_t color_out = color_corrected_ref;
+
+	if (delta_ref_r) {
+		color_out.r += DIV_ROUND(((int32_t)color_corrected_r.r - (int32_t)color_corrected_ref.r) * delta_in_r, delta_ref_r);
+		color_out.g += DIV_ROUND(((int32_t)color_corrected_r.g - (int32_t)color_corrected_ref.g) * delta_in_r, delta_ref_r);
+		color_out.b += DIV_ROUND(((int32_t)color_corrected_r.b - (int32_t)color_corrected_ref.b) * delta_in_r, delta_ref_r);
+	}
+	if (delta_ref_g) {
+		color_out.r += DIV_ROUND(((int32_t)color_corrected_g.r - (int32_t)color_corrected_ref.r) * delta_in_g, delta_ref_g);
+		color_out.g += DIV_ROUND(((int32_t)color_corrected_g.g - (int32_t)color_corrected_ref.g) * delta_in_g, delta_ref_g);
+		color_out.b += DIV_ROUND(((int32_t)color_corrected_g.b - (int32_t)color_corrected_ref.b) * delta_in_g, delta_ref_g);
+	}
+	if (delta_ref_b) {
+		color_out.r += DIV_ROUND(((int32_t)color_corrected_b.r - (int32_t)color_corrected_ref.r) * delta_in_b, delta_ref_b);
+		color_out.g += DIV_ROUND(((int32_t)color_corrected_b.g - (int32_t)color_corrected_ref.g) * delta_in_b, delta_ref_b);
+		color_out.b += DIV_ROUND(((int32_t)color_corrected_b.b - (int32_t)color_corrected_ref.b) * delta_in_b, delta_ref_b);
+	}
+
+	*out = color_out;
+}
+
 #define GLOBAL_BRIGHT(comp) ((comp) > NUM_LEDS ? (comp) >> 4 : 0)
 #define LOCAL_BRIGHT(comp, i_) (GLOBAL_BRIGHT(comp) + (((i_ < (comp - (GLOBAL_BRIGHT(comp) << 4)))) ? 1 : 0))
 
 static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
 	rgb16_t color_in = { r, g, b };
 
-	uint16_t r_corrected = color_in.r;
-	uint16_t g_corrected = color_in.g;
-	uint16_t b_corrected = color_in.b;
+	rgb16_t color_out;
+	apply_color_correction_per_channel(&color_in, &color_out);
+
+	uint16_t r_corrected = color_out.r;
+	uint16_t g_corrected = color_out.g;
+	uint16_t b_corrected = color_out.b;
+	uint8_t local_r1, local_g1, local_b1;
+	uint8_t local_r2, local_g2, local_b2;
+
+	local_r1 = MIN(r_corrected, 255);
+	local_g1 = MIN(g_corrected, 255);
+	local_b1 = MIN(b_corrected, 255);
+	r_corrected -= (uint16_t)local_r1;
+	g_corrected -= (uint16_t)local_g1;
+	b_corrected -= (uint16_t)local_b1;
+
+	local_r2 = MIN(r_corrected, 255);
+	local_g2 = MIN(g_corrected, 255);
+	local_b2 = MIN(b_corrected, 255);
+	r_corrected -= (uint16_t)local_r2;
+	g_corrected -= (uint16_t)local_g2;
+	b_corrected -= (uint16_t)local_b2;
+
 	for (int i = 0; i < NUM_LEDS; i++) {
-		uint8_t local_r = MIN(r_corrected, 255);
-		uint8_t local_g = MIN(g_corrected, 255);
-		uint8_t local_b = MIN(b_corrected, 255);
-		data = led_set_color(data, local_r, local_g, local_b);
-		r_corrected -= local_r;
-		g_corrected -= local_g;
-		b_corrected -= local_b;
+		if (i % 2) {
+			data = led_set_color(data, local_r1, local_g1, local_b1);
+		} else {
+			data = led_set_color(data, local_r2, local_g2, local_b2);
+		}
 	}
 }
 
