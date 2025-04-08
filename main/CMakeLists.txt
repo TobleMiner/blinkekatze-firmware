@@ -10,6 +10,7 @@ set(srcs
 	src/default_color.c
 	src/fast_hsv2rgb_32bit.c
 	src/futil.c
+	src/gpio.c
 	src/i2c_bus.c
 	src/lis3dh.c
 	src/ltr_303als.c
@@ -18,6 +19,7 @@ set(srcs
 	src/neighbour_rssi_delay_model.c
 	src/neighbour_static_info.c
 	src/neighbour_status.c
+	src/network.c
 	src/nvs.c
 	src/node_info.c
 	src/ota.c
