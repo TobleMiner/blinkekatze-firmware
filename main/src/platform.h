@@ -46,3 +46,7 @@ void platform_set_brightness_white(platform_t *platform, uint16_t bright);
 bool platform_handle_packet(platform_t *platform, uint8_t packet_type, const wireless_packet_t *packet);
 esp_err_t platform_set_color_channel_offset(platform_t *platform, unsigned int channel, unsigned int offset);
 bool platform_is(const platform_t *platform, const char *name);
+
+static inline const char *platform_get_name(const platform_t *platform) {
+	return platform->def->name;
+}

@@ -31,6 +31,7 @@ typedef struct neighbour_static_info_packet {
 	char ap_password[WIRELESS_AP_PASSWORD_LENGTH];
 	char firmware_version[32];
 	uint8_t firmware_sha256_hash[32];
+	char platform_name[16];
 } __attribute__((packed)) neighbour_static_info_packet_t;
 
 typedef struct neighbour_rssi_info {

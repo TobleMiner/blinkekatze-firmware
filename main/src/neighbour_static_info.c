@@ -17,6 +17,7 @@ static const char *TAG = "node_static_info";
 typedef struct neighbour_static_info {
 	int64_t last_tx_timestamp;
 	scheduler_task_t update_task;
+	const platform_t *platform;
 } neighbour_static_info_t;
 
 static neighbour_static_info_t neighbour_static_info = { 0 };
@@ -43,13 +44,16 @@ static void neighbour_static_info_update(void *arg) {
 		const esp_app_desc_t *app_desc = esp_app_get_description();
 		memcpy(info.firmware_version, app_desc->version, sizeof(info.firmware_version));
 		memcpy(info.firmware_sha256_hash, app_desc->app_elf_sha256, sizeof(info.firmware_sha256_hash));
+		const char *platform_name = platform_get_name(neighbour_static_info.platform);
+		memcpy(info.platform_name, platform_name, MIN(sizeof(info.platform_name), strlen(platform_name)));
 		wireless_broadcast((const uint8_t *)&info, sizeof(info));
 		neighbour_static_info.last_tx_timestamp = now;
 	}
 	scheduler_schedule_task_relative(&neighbour_static_info.update_task, neighbour_static_info_update, NULL, MS_TO_US(1000));
 }
 
-void neighbour_static_info_init(void) {
+void neighbour_static_info_init(const platform_t *platform) {
+	neighbour_static_info.platform = platform;
 	scheduler_task_init(&neighbour_static_info.update_task);
 	scheduler_schedule_task_relative(&neighbour_static_info.update_task, neighbour_static_info_update, NULL, 0);
 }

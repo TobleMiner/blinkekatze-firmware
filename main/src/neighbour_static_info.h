@@ -4,9 +4,10 @@
 #include <stdint.h>
 
 #include "neighbour.h"
+#include "platform.h"
 #include "wireless.h"
 
-void neighbour_static_info_init(void);
+void neighbour_static_info_init(const platform_t *platform);
 void neighbour_static_info_rx(const wireless_packet_t *packet, const neighbour_t *neigh);
 void neighbour_static_info_get_ap_ssid(const neighbour_t *neigh, char *buf, size_t len);
 bool neighbour_static_info_get_ap_password(const neighbour_t *neigh, char *buf, size_t len);
