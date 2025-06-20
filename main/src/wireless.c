@@ -195,7 +195,7 @@ static void packet_crypt(uint8_t *dst, const uint8_t *src, size_t len, const wir
 
 static bool rx_packet_encrypted(wireless_packet_t *packet, const esp_now_recv_info_t *info, const uint8_t *data, int data_len) {
 	if (data_len >= sizeof(wireless_packet_hdr_t) &&
-	    data_len <= WIRELESS_MAX_PACKET_SIZE - sizeof(wireless_packet_hdr_t)) {
+	    data_len <= WIRELESS_MAX_PACKET_SIZE + sizeof(wireless_packet_hdr_t)) {
 		wireless_packet_hdr_t hdr;
 		memcpy(&hdr, data, sizeof(wireless_packet_hdr_t));
 		const uint8_t *payload = data + sizeof(wireless_packet_hdr_t);
