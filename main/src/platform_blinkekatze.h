@@ -29,4 +29,6 @@ typedef struct platform_blinkekatze {
 	spi_transaction_t xfer;
 } platform_blinkekatze_t;
 
+extern platform_def_t platform_blinkekatze;
+
 esp_err_t platform_blinkekatze_probe(platform_t **ret);

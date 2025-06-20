@@ -156,7 +156,13 @@ static void set_rdb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint
 }
 
 static const platform_ops_t lacklight_ops = {
+	.probe = platform_tallylight_v2_probe,
 	.set_rgb_led_color = set_rdb_led_color
+};
+
+platform_def_t platform_tallylight_v2 = {
+	.ops = &lacklight_ops,
+	.name = "tallylight_v2"
 };
 
 static void eth_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
@@ -348,7 +354,7 @@ esp_err_t platform_tallylight_v2_probe(platform_t **ret) {
 
 	ESP_ERROR_CHECK(esp_eth_start(eth_handle_spi));
 
-	platform_init(&tally->base, &lacklight_ops, "TallyLight v2");
+	platform_init(&tally->base, &platform_tallylight_v2);
 	*ret = &tally->base;
 
 	return 0;

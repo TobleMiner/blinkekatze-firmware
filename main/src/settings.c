@@ -160,3 +160,11 @@ unsigned int settings_get_color_channel_zero_offset(unsigned int channel) {
 	snprintf(nvs_name, sizeof(nvs_name), "cc_offset_%u", channel);
 	return nvs_get_uint(nvs_name, 20);
 }
+
+void settings_set_platform_name(const char *name) {
+	nvs_set_string("platform", name);
+}
+
+char *settings_get_platform_name(void) {
+	return nvs_get_string("platform");
+}

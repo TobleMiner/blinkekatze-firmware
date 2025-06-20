@@ -208,8 +208,14 @@ static void set_rdb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint
 }
 
 static const platform_ops_t blinkekatze_ops = {
+	.probe = platform_blinkekatze_probe,
 	.pre_schedule = pre_schedule,
 	.set_rgb_led_color = set_rdb_led_color
+};
+
+platform_def_t platform_blinkekatze = {
+	.ops = &blinkekatze_ops,
+	.name = "blinkekatze"
 };
 
 esp_err_t platform_blinkekatze_probe(platform_t **ret) {
@@ -318,7 +324,7 @@ esp_err_t platform_blinkekatze_probe(platform_t **ret) {
 
 	ESP_ERROR_CHECK(ltr_303als_init(&katze->als, &katze->i2c_bus));
 
-	platform_init(&katze->base, &blinkekatze_ops, "blinkekatze");
+	platform_init(&katze->base, &platform_blinkekatze);
 	katze->base.gauge = &katze->gauge;
 	katze->base.charger = &katze->charger;
 	katze->base.als = &katze->als;

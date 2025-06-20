@@ -179,10 +179,16 @@ static void set_brightness_white(platform_t *platform, uint16_t bright) {
 }
 
 static const platform_ops_t laempan_ops = {
+	.probe = platform_laempan_probe,
 	.set_rgb_led_color = set_rgb_led_color,
 	.set_color_channel_offset = set_color_channel_offset,
 	.handle_packet = handle_packet,
 	.set_brightness_white = set_brightness_white
+};
+
+platform_def_t platform_laempan = {
+	.ops = &laempan_ops,
+	.name = "laempan"
 };
 
 void configure_ledc_channel(ledc_channel_t chan, int gpio) {
@@ -298,7 +304,7 @@ esp_err_t platform_laempan_probe(platform_t **ret) {
 	configure_ledc_channel(LEDC_CHANNEL_2, GPIO_BLUE);
 	configure_ledc_channel(LEDC_CHANNEL_3, GPIO_WHITE);
 
-	platform_init(&laempan->base, &laempan_ops, "laempan");
+	platform_init(&laempan->base, &platform_laempan);
 	laempan->base.default_brightness = HSV_VAL_MAX / 3;
 	laempan->white_brightness = 400;
 	*ret = &laempan->base;

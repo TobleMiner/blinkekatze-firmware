@@ -100,8 +100,14 @@ static void set_rdb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint
 }
 
 static const platform_ops_t lacklight_ops = {
+	.probe = platform_lacklight_probe,
 	.pre_schedule = pre_schedule,
 	.set_rgb_led_color = set_rdb_led_color
+};
+
+platform_def_t platform_lacklight = {
+	.ops = &lacklight_ops,
+	.name = "lacklight"
 };
 
 esp_err_t platform_lacklight_probe(platform_t **ret) {
@@ -150,7 +156,7 @@ esp_err_t platform_lacklight_probe(platform_t **ret) {
 	katze->xfer.rx_buffer = NULL;
 	ESP_ERROR_CHECK(spi_device_transmit(katze->dev, &katze->xfer));
 
-	platform_init(&katze->base, &lacklight_ops, "lacklight");
+	platform_init(&katze->base, &platform_lacklight);
 	*ret = &katze->base;
 
 	return 0;

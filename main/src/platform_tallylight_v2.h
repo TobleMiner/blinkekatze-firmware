@@ -16,4 +16,6 @@ typedef struct platform_tallylight_v2 {
 	uint8_t led_color_data[6];
 } platform_tallylight_v2_t;
 
+extern platform_def_t platform_tallylight_v2;
+
 esp_err_t platform_tallylight_v2_probe(platform_t **ret);

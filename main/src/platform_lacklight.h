@@ -16,4 +16,6 @@ typedef struct platform_lacklight {
 	spi_transaction_t xfer;
 } platform_lacklight_t;
 
+extern platform_def_t platform_lacklight;
+
 esp_err_t platform_lacklight_probe(platform_t **ret);

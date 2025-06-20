@@ -11,6 +11,8 @@ typedef struct platform_laempan {
 	unsigned int white_brightness;
 } platform_laempan_t;
 
+extern platform_def_t platform_laempan;
+
 esp_err_t platform_laempan_probe(platform_t **ret);
 bool platform_is_laempan(const platform_t *platform);
 void platform_brightness_white_tx(platform_t *platform, uint16_t brightness, const uint8_t *address);
