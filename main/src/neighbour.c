@@ -402,9 +402,9 @@ bool neighbour_has_neighbours(void) {
 }
 
 void neighbour_print_list(void) {
-	printf("Address             Platform        Uptime       Age      RSSI     SoC    Time to empty   Firmware hash   Firmware version   OTA status\r\n");
-	printf("===================================================================================================================================\r\n");
-	//      aa:bb:cc:dd:ee:ff   tallylight_v2   xxxxxxxxms   xxxxxms  -90dBm   100%   65535min        <short hash>    <firmware version>
+	printf("Address             Platform         Uptime        Age       RSSI    SoC     Time to empty   Firmware hash   Firmware version   OTA status\r\n");
+	printf("===========================================================================================================================================\r\n");
+	//      aa:bb:cc:dd:ee:ff   tallylight_v2    xxxxxxxxms    xxxxxms  -90dBm   100%   65535min        <short hash>    <firmware version>
 	neighbour_t *neigh;
 	int64_t now = esp_timer_get_time();
 	unsigned int num_neighbours = 0;
@@ -421,30 +421,58 @@ void neighbour_print_list(void) {
 			char firmware_hash_str[12 + 1] = { 0 };
 			hex_encode(neigh->last_static_info.firmware_sha256_hash, sizeof(neigh->last_static_info.firmware_sha256_hash),
 				   firmware_hash_str, sizeof(firmware_hash_str) - 1);
-			printf(MACSTR"   %-13.*s   %8lums   %5lums   %2ddBm   %3d%%   %5dmin        %-13s   %-16.*s   %s\r\n",
-			       MAC2STR(neigh->address),
-			       static_strs_valid ? strnlen(platform_name, sizeof(neigh->last_static_info.platform_name)) : 3,
-			       static_strs_valid ? platform_name : "???",
-			       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
-			       (unsigned long)(age_ms / 1000ULL),
-			       neigh->rssi,
-			       neigh->last_status.battery_soc_percent,
-			       neigh->last_status.battery_time_to_empty_min,
-			       firmware_hash_str,
-			       static_strs_valid ? strnlen(firmware_str, sizeof(neigh->last_static_info.firmware_version)) : 3,
-			       static_strs_valid ? firmware_str : "???",
-			       ota_status);
+			if (neigh->rssi == 0) {
+				printf(MACSTR"   %-13.*s   %9lums   %5lums     0dBm   %3d%%   %5dmin         %-13s   %-16.*s   %s\r\n",
+				       MAC2STR(neigh->address),
+				       static_strs_valid ? strnlen(platform_name, sizeof(neigh->last_static_info.platform_name)) : 3,
+				       static_strs_valid ? platform_name : "???",
+				       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
+				       (unsigned long)(age_ms / 1000ULL),
+				       neigh->last_status.battery_soc_percent,
+				       neigh->last_status.battery_time_to_empty_min,
+				       firmware_hash_str,
+				       static_strs_valid ? strnlen(firmware_str, sizeof(neigh->last_static_info.firmware_version)) : 3,
+				       static_strs_valid ? firmware_str : "???",
+				       ota_status);
+			} else {
+				printf(MACSTR"   %-13.*s   %9lums   %5lums   %2ddBm   %3d%%   %5dmin         %-13s   %-16.*s   %s\r\n",
+				       MAC2STR(neigh->address),
+				       static_strs_valid ? strnlen(platform_name, sizeof(neigh->last_static_info.platform_name)) : 3,
+				       static_strs_valid ? platform_name : "???",
+				       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
+				       (unsigned long)(age_ms / 1000ULL),
+				       neigh->rssi,
+				       neigh->last_status.battery_soc_percent,
+				       neigh->last_status.battery_time_to_empty_min,
+				       firmware_hash_str,
+				       static_strs_valid ? strnlen(firmware_str, sizeof(neigh->last_static_info.firmware_version)) : 3,
+				       static_strs_valid ? firmware_str : "???",
+				       ota_status);
+			}
 		} else {
-			printf(MACSTR"   %-13.*s   %8lums   %5lums   %2ddBm   ???       ???         ???            %-16.*s   %s\r\n",
-			       MAC2STR(neigh->address),
-			       static_strs_valid ? strnlen(platform_name, sizeof(neigh->last_static_info.platform_name)) : 3,
-			       static_strs_valid ? platform_name : "???",
-			       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
-			       (unsigned long)(age_ms / 1000ULL),
-			       neigh->rssi,
-			       static_strs_valid ? strnlen(firmware_str, sizeof(neigh->last_static_info.firmware_version)) : 3,
-			       static_strs_valid ? firmware_str : "???",
-			       ota_status);
+			if (neigh->rssi == 0) {
+				printf(MACSTR"   %-13.*s   %9lums   %5lums     0dBm   ???       ???           ???             %-16.*s   %s\r\n",
+				       MAC2STR(neigh->address),
+				       static_strs_valid ? strnlen(platform_name, sizeof(neigh->last_static_info.platform_name)) : 3,
+				       static_strs_valid ? platform_name : "???",
+				       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
+				       (unsigned long)(age_ms / 1000ULL),
+				       static_strs_valid ? strnlen(firmware_str, sizeof(neigh->last_static_info.firmware_version)) : 3,
+				       static_strs_valid ? firmware_str : "???",
+				       ota_status);
+			} else {
+				printf(MACSTR"   %-13.*s   %9lums   %5lums   %2ddBm   ???       ???           ???             %-16.*s   %s\r\n",
+				       MAC2STR(neigh->address),
+				       static_strs_valid ? strnlen(platform_name, sizeof(neigh->last_static_info.platform_name)) : 3,
+				       static_strs_valid ? platform_name : "???",
+				       (unsigned long)(get_uptime_us(neigh, now) / 1000ULL),
+				       (unsigned long)(age_ms / 1000ULL),
+				       neigh->rssi,
+				       static_strs_valid ? strnlen(firmware_str, sizeof(neigh->last_static_info.firmware_version)) : 3,
+				       static_strs_valid ? firmware_str : "???",
+				       ota_status);
+
+			}
 		}
 	}
 	printf("Have %u neigbours\r\n", num_neighbours);
