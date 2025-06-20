@@ -35,6 +35,7 @@ typedef enum wireless_packet_type {
 	WIRELESS_PACKET_TYPE_NEIGHBOUR_RSSI_REPORT = 13,
 	WIRELESS_PACKET_TYPE_COLOR_CHANNEL_ZERO_OFFSET = 14,
 	WIRELESS_PACKET_TYPE_BRIGHTNESS_WHITE = 15,
+	WIRELESS_PACKET_TYPE_REBOOT = 16,
 } wireless_packet_type_t;
 
 typedef uint8_t wireless_address_t[ESP_NOW_ETH_ALEN];

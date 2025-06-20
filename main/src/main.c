@@ -39,6 +39,7 @@
 #include "platform.h"
 #include "power_control.h"
 #include "rainbow_fade.h"
+#include "reboot.h"
 #include "scheduler.h"
 #include "settings.h"
 #include "shell.h"
@@ -171,6 +172,9 @@ void app_main(void) {
 						break;
 					case WIRELESS_PACKET_TYPE_NEIGHBOUR_RSSI_REPORT:
 						neighbour_rx_rssi_info(&packet);
+						break;
+					case WIRELESS_PACKET_TYPE_REBOOT:
+						reboot_rx(&packet);
 						break;
 					default:
 						if (!platform_handle_packet(platform, packet_type, &packet)) {

@@ -30,6 +30,7 @@ set(srcs
 	src/platform.c
 	src/power_control.c
 	src/rainbow_fade.c
+	src/reboot.c
 	src/scheduler.c
 	src/settings.c
 	src/shared_config.c

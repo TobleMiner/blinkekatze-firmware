@@ -17,6 +17,7 @@
 #include "platform_laempan.h"
 #include "power_control.h"
 #include "rainbow_fade.h"
+#include "reboot.h"
 #include "state_of_charge.h"
 #include "uid.h"
 #include "usb.h"
@@ -126,8 +127,33 @@ static int ota_ignore_version(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_str *address;
+	struct arg_end *end;
+} reboot_args;
+
 static int reboot(int argc, char **argv) {
-	esp_restart();
+	reboot_args.address->sval[0] = "";
+
+	int errors = arg_parse(argc, argv, (void **)&reboot_args);
+	if (errors) {
+		arg_print_errors(stderr, reboot_args.end, argv[0]);
+		return 1;
+	}
+
+	if (reboot_args.address->sval[0] && strlen(reboot_args.address->sval[0])) {
+		uint8_t address[ESP_NOW_ETH_ALEN];
+		int err = parse_mac_address(reboot_args.address->sval[0], address);
+		if (err) {
+			fprintf(stderr, "'%s' is not a valid node address\r\n", reboot_args.address->sval[0]);
+			return 1;
+		}
+
+		reboot_tx(address);
+	} else {
+		esp_restart();
+	}
+
 	return 0;
 }
 
@@ -1065,9 +1091,12 @@ esp_err_t shell_init(bonk_t *bonk_, platform_t *platform_) {
 		    "Force OTA update even if version already installed",
 		    ota_ignore_version);
 
-	ADD_COMMAND("reboot",
-		    "Reboot local node",
-		    reboot);
+	reboot_args.address = arg_str0(NULL, NULL, "address", "Address of target node. Local node if omitted");
+	reboot_args.end = arg_end(1);
+	ADD_COMMAND_ARGS("reboot",
+			 "Reboot a node",
+			 reboot,
+			 &reboot_args);
 
 	uid_args.address = arg_str1(NULL, NULL, "address", "Address of target node");
 	uid_args.enable = arg_str1(NULL, NULL, "on|off", "Switch uid light on or off");
