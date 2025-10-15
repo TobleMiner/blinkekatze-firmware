@@ -103,7 +103,7 @@ void app_main(void) {
 	ESP_ERROR_CHECK(ota_init());
 
 	neighbour_static_info_init(platform);
-	node_info_init(platform->gauge);
+	node_info_init(platform);
 
 	rainbow_fade_init();
 

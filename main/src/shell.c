@@ -18,6 +18,7 @@
 #include "power_control.h"
 #include "rainbow_fade.h"
 #include "reboot.h"
+#include "settings.h"
 #include "state_of_charge.h"
 #include "uid.h"
 #include "usb.h"
@@ -944,7 +945,7 @@ static int color_channel_zero_offset(int argc, char **argv) {
 		fprintf(stderr, "Channel must be >= 0\r\n");
 		return 1;
 	}
-	int offset = color_channel_zero_offset_args.channel->ival[0];
+	int offset = color_channel_zero_offset_args.offset->ival[0];
 	if (offset < 0) {
 		fprintf(stderr, "Offset must be >= 0\r\n");
 		return 1;
@@ -1293,7 +1294,7 @@ esp_err_t shell_init(bonk_t *bonk_, platform_t *platform_) {
 	color_channel_zero_offset_args.end = arg_end(2);
 
 	ADD_COMMAND_ARGS("color_zero_offset",
-			 "Set zero offset on color channel",
+			 "Set zero offset on color channel (11 bit)",
 			 color_channel_zero_offset,
 			 &color_channel_zero_offset_args);
 
