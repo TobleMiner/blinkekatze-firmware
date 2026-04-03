@@ -135,10 +135,11 @@ static void apply_color_correction_per_channel(const rgb16_t *in, rgb16_t *out) 
 #define GLOBAL_BRIGHT(comp) ((comp) > NUM_LEDS ? (comp) >> 4 : 0)
 #define LOCAL_BRIGHT(comp, i_) (GLOBAL_BRIGHT(comp) + (((i_ < (comp - (GLOBAL_BRIGHT(comp) << 4)))) ? 1 : 0))
 
-static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
+static bool leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
 	rgb16_t color_in = { r, g, b };
 	rgb16_t color_out;
 	apply_color_correction_per_channel(&color_in, &color_out);
+	bool led_lit = false;
 //	int led_map[NUM_LEDS] = { 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15 };
 	int led_map[NUM_LEDS] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
 /*
@@ -157,11 +158,14 @@ static void leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
 		uint8_t local_r = MIN(r_corrected, 255);
 		uint8_t local_g = MIN(g_corrected, 255);
 		uint8_t local_b = MIN(b_corrected, 255);
+		led_lit = led_lit || local_r || local_g || local_b;
 		data = led_set_color(data, local_r, local_g, local_b);
 		r_corrected -= local_r;
 		g_corrected -= local_g;
 		b_corrected -= local_b;
 	}
+
+	return led_lit;
 }
 
 static void pre_schedule(platform_t *platform) {
@@ -188,23 +192,56 @@ static void set_rdb_led_color(platform_t *platform, uint16_t r, uint16_t g, uint
 		spi_device_get_trans_result(plat->dev, &xfer_, portMAX_DELAY);
 		plat->transaction_pending = false;
 	}
-	if (!plat->is_rev2) {
-		gpio_set_direction(3, GPIO_MODE_OUTPUT);
-		gpio_set_level(3, 0);
-		gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
+
+	bool led_lit = leds_set_color(plat->led_data + BYTES_RESET, r, g, b);
+	int64_t now = esp_timer_get_time();
+	if (led_lit) {
+		plat->last_led_lit_us = now;
 	}
 
-	leds_set_color(plat->led_data + BYTES_RESET, r, g, b);
+	if (now - plat->last_led_lit_us < MS_TO_US(1000)) {
+		if (!plat->leds_on) {
+			esp_err_t err = bq24295_set_otg_enable(&plat->charger, true);
+			if (err) {
+				ESP_LOGE(TAG, "Failed to enable LED boost converter: %d", err);
+			} else {
+				plat->leds_on = true;
+			}
 
-	plat->xfer.length = dma_buf_len * 8;
-	plat->xfer.rxlength = 0;
-	plat->xfer.tx_buffer = plat->led_data;
-	plat->xfer.rx_buffer = NULL;
-	if (!plat->is_rev2) {
-		esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
+			esp_rom_gpio_connect_out_signal(plat->is_rev2 ? 3 : 7, FSPID_OUT_IDX, false, false);
+		}
+
+		if (plat->leds_on) {
+			if (!plat->is_rev2) {
+				gpio_set_direction(3, GPIO_MODE_OUTPUT);
+				gpio_set_level(3, 0);
+				gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
+			}
+
+			plat->xfer.length = dma_buf_len * 8;
+			plat->xfer.rxlength = 0;
+			plat->xfer.tx_buffer = plat->led_data;
+			plat->xfer.rx_buffer = NULL;
+			if (!plat->is_rev2) {
+				esp_rom_gpio_connect_out_signal(3, FSPID_OUT_IDX, false, false);
+			}
+			ESP_ERROR_CHECK(spi_device_queue_trans(plat->dev, &plat->xfer, 0));
+			plat->transaction_pending = true;
+		}
+	} else {
+		if (plat->leds_on) {
+			ESP_LOGI(TAG, "LEDs have been off for a while, disabling boost converter to save power");
+			esp_err_t err = bq24295_set_otg_enable(&plat->charger, false);
+			if (err) {
+				ESP_LOGE(TAG, "Failed to disable LED boost converter: %d", err);
+			} else {
+				gpio_set_direction(plat->is_rev2 ? 3 : 7, GPIO_MODE_OUTPUT);
+				gpio_set_level(plat->is_rev2 ? 3 : 7, 0);
+				gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[plat->is_rev2 ? 3 : 7], PIN_FUNC_GPIO);
+				plat->leds_on = false;
+			}
+		}
 	}
-	ESP_ERROR_CHECK(spi_device_queue_trans(plat->dev, &plat->xfer, 0));
-	plat->transaction_pending = true;
 }
 
 static const platform_ops_t blinkekatze_ops = {
@@ -330,6 +367,8 @@ esp_err_t platform_blinkekatze_probe(platform_t **ret) {
 	katze->base.als = &katze->als;
 	katze->base.accelerometer = &katze->accelerometer;
 	katze->base.barometer = &katze->barometer;
+	katze->leds_on = true;
+	katze->last_led_lit_us = esp_timer_get_time();
 	*ret = &katze->base;
 
 	return 0;

@@ -27,6 +27,8 @@ typedef struct platform_blinkekatze {
 	spi_device_handle_t dev;
 	uint8_t *led_data;
 	spi_transaction_t xfer;
+	bool leds_on;
+	int64_t last_led_lit_us;
 } platform_blinkekatze_t;
 
 extern platform_def_t platform_blinkekatze;
