@@ -139,30 +139,31 @@ static bool leds_set_color(uint8_t *data, uint16_t r, uint16_t g, uint16_t b) {
 	rgb16_t color_in = { r, g, b };
 	rgb16_t color_out;
 	apply_color_correction_per_channel(&color_in, &color_out);
-	bool led_lit = false;
-//	int led_map[NUM_LEDS] = { 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15 };
-	int led_map[NUM_LEDS] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
-/*
-	for (int i = 0; i < NUM_LEDS; i++) {
-		uint8_t local_r = MIN(LOCAL_BRIGHT(color_out.r, led_map[i]), 255);
-		uint8_t local_g = MIN(LOCAL_BRIGHT(color_out.g, led_map[i]), 255);
-		uint8_t local_b = MIN(LOCAL_BRIGHT(color_out.b, led_map[i]), 255);
-		data = led_set_color(data, local_r, local_g, local_b);
-	}
-*/
 
-	uint16_t r_corrected = color_out.r;
-	uint16_t g_corrected = color_out.g;
-	uint16_t b_corrected = color_out.b;
-	for (int i = 0; i < NUM_LEDS; i++) {
-		uint8_t local_r = MIN(r_corrected, 255);
-		uint8_t local_g = MIN(g_corrected, 255);
-		uint8_t local_b = MIN(b_corrected, 255);
+	rgb16_t per_led_colors[NUM_LEDS] = { 0 };
+	for (unsigned int i = 0; i <= 4; i++) {
+		uint16_t divisor = 1 << (4 - i);
+		rgb16_t common_color_component = { color_out.r / divisor, color_out.g / divisor, color_out.b / divisor };
+
+		unsigned int stride = 1 << i;
+		for (unsigned int j = 0; j < NUM_LEDS; j += stride) {
+			per_led_colors[j].r += common_color_component.r;
+			per_led_colors[j].g += common_color_component.g;
+			per_led_colors[j].b += common_color_component.b;
+		}
+
+		color_out.r -= common_color_component.r * divisor;
+		color_out.g -= common_color_component.g * divisor;
+		color_out.b -= common_color_component.b * divisor;
+	}
+
+	bool led_lit = false;
+	for (unsigned int i = 0; i < NUM_LEDS; i++) {
+		uint8_t local_r = MIN(per_led_colors[i].r, 255);
+		uint8_t local_g = MIN(per_led_colors[i].g, 255);
+		uint8_t local_b = MIN(per_led_colors[i].b, 255);
 		led_lit = led_lit || local_r || local_g || local_b;
 		data = led_set_color(data, local_r, local_g, local_b);
-		r_corrected -= local_r;
-		g_corrected -= local_g;
-		b_corrected -= local_b;
 	}
 
 	return led_lit;
