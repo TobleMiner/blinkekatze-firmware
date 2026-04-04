@@ -8,6 +8,7 @@
 #include <esp_timer.h>
 
 #include "color_palette.h"
+#include "color_palette_wled.h"
 #include "scheduler.h"
 #include "shared_config.h"
 #include "util.h"
@@ -104,38 +105,21 @@ void rainbow_fade_apply(color_t *color) {
 		uint16_t hue_delta = cycle_val % HSV_HUE_STEPS;
 
 		hsv->h = (hsv->h + hue_delta) % HSV_HUE_STEPS;
-/*
-		ESP_LOGI(TAG, "====================");
-		ESP_LOGI(TAG, "1. HSV: %u, %u, %u", color->hsv.h, color->hsv.s, color->hsv.v);
-		color_to_rgb(color);
-		ESP_LOGI(TAG, "2. RGB: %u, %u, %u", color->rgb.r, color->rgb.g, color->rgb.b);
-		color_to_hsv(color);
-		ESP_LOGI(TAG, "3. HSV: %u, %u, %u", color->hsv.h, color->hsv.s, color->hsv.v);
-*/
 	} else {
-//		const color_palette_t *palette = &rainbow_stripe_palette;
-//		const color_palette_t *palette = &aurora_palette;
-		const color_palette_t *palette = &aurora2_palette;
+		const color_palette_t *palette = &wled_palette_autumn;
 
 		neighbour_t *clock_source;
 		int64_t now = neighbour_get_global_clock_and_source(&clock_source);
 
-		int64_t us_per_color = DIV_ROUND((int64_t)rainbow_fade.hue_cycle_time_ms * 1000LL, palette->num_colors);
-		int64_t color_progress = now % us_per_color;
-		uint16_t color_blend_progress = color_progress * COLOR_BLEND_MAX / us_per_color;
+		// Implicint factor of 1000, us vs ms
+		unsigned int progress = now / (int64_t)rainbow_fade.hue_cycle_time_ms % 2000;
+		if (progress > 1000) {
+			progress = 2000 - progress;
+		}
 
-		unsigned int current_color_idx = (now / 1000 * palette->num_colors / (int64_t)rainbow_fade.hue_cycle_time_ms) % palette->num_colors;
-		unsigned int next_color_idx = (current_color_idx + 1) % palette->num_colors;
-
-		rgb16_t current_color = palette->colors[current_color_idx].color;
-		color_scale_rgb(&current_color, palette->color_maxval, 65535);
-
-		rgb16_t next_color = palette->colors[next_color_idx].color;
-		color_scale_rgb(&next_color, palette->color_maxval, 65535);
-
-		color_blend_rgb(color, &current_color, &next_color, color_blend_progress);
-//		ESP_LOGI(TAG, "idx: %u, progress: %05u, color: %05u, %05u, %05u", current_color_idx, color_blend_progress, color->rgb.r, color->rgb.g, color->rgb.b);
-//		color->rgb = current_color;
+		unsigned int len = color_palette_get_total_length(palette);
+		unsigned int pos = (uint32_t)progress * len / 1000;
+		color_palette_get_color_at(color, palette, pos);
 	}
 }
 
