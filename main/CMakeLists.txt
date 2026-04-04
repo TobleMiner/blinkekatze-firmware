@@ -7,7 +7,6 @@ set(srcs
 	src/color.c
 	src/color_channel_offset.c
 	src/color_override.c
-	src/color_palette.c
 	src/debounce.c
 	src/default_color.c
 	src/fast_hsv2rgb_32bit.c
