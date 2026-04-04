@@ -4,6 +4,8 @@
 
 #include "color.h"
 
+#define COLOR_PALETTE_LENGTH HSV_HUE_STEPS
+
 typedef struct color_palette_color {
 	rgb16_t color;
 	unsigned int position;

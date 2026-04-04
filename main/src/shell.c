@@ -1007,6 +1007,30 @@ static int set_white_brightness(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_int *palette_index;
+	struct arg_end *end;
+} set_color_palette_args;
+
+static int set_color_palette(int argc, char **argv) {
+	set_color_palette_args.palette_index->ival[0] = -1;
+
+	int errors = arg_parse(argc, argv, (void **)&set_color_palette_args);
+	if (errors) {
+		arg_print_errors(stderr, set_color_palette_args.end, argv[0]);
+		return 1;
+	}
+
+	int palette_idx = set_color_palette_args.palette_index->ival[0];
+	if (palette_idx < 0) {
+		fprintf(stderr, "Palette index must be >= 0\r\n");
+		return 1;
+	}
+
+	rainbow_fade_set_color_palette_index((unsigned int)palette_idx);
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -1306,6 +1330,14 @@ esp_err_t shell_init(bonk_t *bonk_, platform_t *platform_) {
 			 "Set brightness of white channel",
 			 set_white_brightness,
 			 &set_white_brightness_args);
+
+	set_color_palette_args.palette_index = arg_int1(NULL, NULL, "palette index", "Index of color palette to use");
+	set_color_palette_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("set_color_palette",
+			 "Set colot palette to use",
+			 set_color_palette,
+			 &set_color_palette_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);

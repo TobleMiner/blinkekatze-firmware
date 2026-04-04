@@ -37,6 +37,7 @@ typedef struct rainbow_fade_config_packet {
 	shared_config_hdr_t shared_cfg_hdr;
 	int32_t delay_model_us_delay_per_rssi_step;
 	int32_t delay_model_delay_limit_us;
+	uint16_t color_palette_idx;
 } __attribute__((packed)) rainbow_fade_config_packet_t;
 
 static const char *TAG = "rainbow_fade";
@@ -63,7 +64,8 @@ static void rainbow_fade_tx(void) {
 		.delay_model_rssi_treshold = rainbow_fade.delay_model.delay_rssi_threshold,
 		.delay_model_rssi_limit = rainbow_fade.delay_model.delay_rssi_limit,
 		.delay_model_us_delay_per_rssi_step = rainbow_fade.delay_model.us_delay_per_rssi_step,
-		.delay_model_delay_limit_us = rainbow_fade.delay_model.delay_limit_us
+		.delay_model_delay_limit_us = rainbow_fade.delay_model.delay_limit_us,
+		.color_palette_idx = rainbow_fade.palette_index
 	};
 	shared_config_hdr_init(&rainbow_fade.shared_cfg, &packet.shared_cfg_hdr);
 	wireless_broadcast((const uint8_t *)&packet, sizeof(packet));
@@ -93,32 +95,33 @@ void rainbow_fade_init() {
 }
 
 void rainbow_fade_apply(color_t *color) {
+	neighbour_t *clock_source;
+	int64_t now = neighbour_get_global_clock_and_source(&clock_source);
+	if (rainbow_fade.enable_phase_shift && clock_source) {
+		now -= neighbour_calculate_rssi_delay(&rainbow_fade.delay_model, clock_source);
+	}
+
 	if (rainbow_fade.enable) {
 		color_hsv_t *hsv = color_to_hsv(color);
 
-		neighbour_t *clock_source;
-		int64_t now = neighbour_get_global_clock_and_source(&clock_source);
-		if (rainbow_fade.enable_phase_shift && clock_source) {
-			now -= neighbour_calculate_rssi_delay(&rainbow_fade.delay_model, clock_source);
-		}
 		int64_t cycle_val = now / 1000 * HSV_HUE_STEPS / (int64_t)rainbow_fade.hue_cycle_time_ms;
 		uint16_t hue_delta = cycle_val % HSV_HUE_STEPS;
 
 		hsv->h = (hsv->h + hue_delta) % HSV_HUE_STEPS;
 	} else {
-		const color_palette_t *palette = &wled_palette_autumn;
+		const color_palette_t *palette = wled_color_palettes[0];
 
-		neighbour_t *clock_source;
-		int64_t now = neighbour_get_global_clock_and_source(&clock_source);
-
-		// Implicint factor of 1000, us vs ms
-		unsigned int progress = now / (int64_t)rainbow_fade.hue_cycle_time_ms % 2000;
-		if (progress > 1000) {
-			progress = 2000 - progress;
+		if (rainbow_fade.palette_index < WLED_NUM_PALETTES) {
+			palette = wled_color_palettes[rainbow_fade.palette_index];
 		}
 
-		unsigned int len = color_palette_get_total_length(palette);
-		unsigned int pos = (uint32_t)progress * len / 1000;
+		// Implicint factor of 1000, us vs ms
+		unsigned int progress = now * 10 / (int64_t)rainbow_fade.hue_cycle_time_ms % 20000;
+		if (progress > 10000) {
+			progress = 20000 - progress;
+		}
+
+		unsigned int pos = (uint32_t)progress * COLOR_PALETTE_LENGTH / 10000;
 		color_palette_get_color_at(color, palette, pos);
 	}
 }
@@ -140,6 +143,7 @@ void rainbow_fade_rx(const wireless_packet_t *packet) {
 		rainbow_fade.delay_model.delay_rssi_limit = config_packet.delay_model_rssi_limit;
 		rainbow_fade.delay_model.us_delay_per_rssi_step = config_packet.delay_model_us_delay_per_rssi_step;
 		rainbow_fade.delay_model.delay_limit_us = config_packet.delay_model_delay_limit_us;
+		rainbow_fade.palette_index = config_packet.color_palette_idx;
 	}
 }
 
@@ -167,6 +171,13 @@ void rainbow_fade_set_phase_shift_enable(bool enable) {
 void rainbow_fade_set_rssi_delay_model(const neighbour_rssi_delay_model_t *model) {
 	if (memcmp(model, &rainbow_fade.delay_model, sizeof(*model))) {
 		rainbow_fade.delay_model = *model;
+		config_changed();
+	}
+}
+
+void rainbow_fade_set_color_palette_index(unsigned int palette_idx) {
+	if (palette_idx != rainbow_fade.palette_index) {
+		rainbow_fade.palette_index = palette_idx;
 		config_changed();
 	}
 }

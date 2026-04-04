@@ -76,8 +76,9 @@ static void wled_color_palette_get_color_at(color_t *color, const color_palette_
 	const uint8_t *palette_data = palette->data;
 
 	unsigned int num_steps = wled_color_palette_get_num_steps(palette);
-	unsigned int idx_before = wled_get_color_idx_before_pos(palette, pos);
-	unsigned int idx_after = wled_get_color_idx_after_pos(palette, pos);
+	unsigned int step_in_palette = DIV_ROUND((uint32_t)pos * num_steps, COLOR_PALETTE_LENGTH);
+	unsigned int idx_before = wled_get_color_idx_before_pos(palette, step_in_palette);
+	unsigned int idx_after = wled_get_color_idx_after_pos(palette, step_in_palette);
 
 	rgb16_t color_before, color_after;
 	wled_get_color(&color_before, palette, idx_before);
@@ -92,15 +93,17 @@ static void wled_color_palette_get_color_at(color_t *color, const color_palette_
 		color->format = COLOR_FORMAT_RGB16;
 		color->rgb = color_before;
 	} else {
-		// TODO: Blend prevision is inherently limited by th enumber of steps between colors in the palette
 		unsigned int step_before = WLED_STEP(palette_data, idx_before);
 		unsigned int step_after = WLED_STEP(palette_data, idx_after);
-		unsigned int step_length = step_after - step_before;
-		unsigned int step_progress = pos - step_before;
+
+		unsigned int pos_before = DIV_ROUND((uint32_t)step_before * COLOR_PALETTE_LENGTH, num_steps);
+		unsigned int pos_after = DIV_ROUND((uint32_t)step_after * COLOR_PALETTE_LENGTH, num_steps);
+		unsigned int pos_length = pos_after - pos_before;
+		unsigned int pos_progress = pos - pos_before;
 
 		uint16_t blend_progress = 0;
-		if (step_after > step_before && pos >= step_before) {
-			blend_progress = (uint32_t)step_progress * COLOR_BLEND_MAX / step_length;
+		if (pos_after > pos_before && pos >= pos_before) {
+			blend_progress = (uint32_t)pos_progress * COLOR_BLEND_MAX / pos_length;
 		}
 
 		ESP_LOGV(TAG, "Blending %u -> %u, pos: %u, blend: %u", idx_before, idx_after, pos, blend_progress);
@@ -113,4 +116,124 @@ static const color_palette_ops_t wled_color_palette_ops = {
 	.get_color_at = wled_color_palette_get_color_at
 };
 
-const WLED_DECLARE_PALETTE(wled_palette_autumn, es_autumn_19_gp);
+const WLED_DECLARE_PALETTE(wled_ib_jul01_gp, ib_jul01_gp);
+const WLED_DECLARE_PALETTE(wled_es_vintage_57_gp, es_vintage_57_gp);
+const WLED_DECLARE_PALETTE(wled_es_vintage_01_gp, es_vintage_01_gp);
+const WLED_DECLARE_PALETTE(wled_es_rivendell_15_gp, es_rivendell_15_gp);
+const WLED_DECLARE_PALETTE(wled_rgi_15_gp, rgi_15_gp);
+const WLED_DECLARE_PALETTE(wled_retro2_16_gp, retro2_16_gp);
+const WLED_DECLARE_PALETTE(wled_Analogous_1_gp, Analogous_1_gp);
+const WLED_DECLARE_PALETTE(wled_es_pinksplash_08_gp, es_pinksplash_08_gp);
+const WLED_DECLARE_PALETTE(wled_es_ocean_breeze_036_gp, es_ocean_breeze_036_gp);
+const WLED_DECLARE_PALETTE(wled_departure_gp, departure_gp);
+const WLED_DECLARE_PALETTE(wled_es_landscape_64_gp, es_landscape_64_gp);
+const WLED_DECLARE_PALETTE(wled_es_landscape_33_gp, es_landscape_33_gp);
+const WLED_DECLARE_PALETTE(wled_rainbowsherbet_gp, rainbowsherbet_gp);
+const WLED_DECLARE_PALETTE(wled_gr65_hult_gp, gr65_hult_gp);
+const WLED_DECLARE_PALETTE(wled_gr64_hult_gp, gr64_hult_gp);
+const WLED_DECLARE_PALETTE(wled_GMT_drywet_gp, GMT_drywet_gp);
+const WLED_DECLARE_PALETTE(wled_ib15_gp, ib15_gp);
+const WLED_DECLARE_PALETTE(wled_Tertiary_01_gp, Tertiary_01_gp);
+const WLED_DECLARE_PALETTE(wled_lava_gp, lava_gp);
+const WLED_DECLARE_PALETTE(wled_fierce_ice_gp, fierce_ice_gp);
+const WLED_DECLARE_PALETTE(wled_Colorfull_gp, Colorfull_gp);
+const WLED_DECLARE_PALETTE(wled_Pink_Purple_gp, Pink_Purple_gp);
+const WLED_DECLARE_PALETTE(wled_Sunset_Real_gp, Sunset_Real_gp);
+const WLED_DECLARE_PALETTE(wled_Sunset_Yellow_gp, Sunset_Yellow_gp);
+const WLED_DECLARE_PALETTE(wled_Beech_gp, Beech_gp);
+const WLED_DECLARE_PALETTE(wled_Another_Sunset_gp, Another_Sunset_gp);
+const WLED_DECLARE_PALETTE(wled_es_autumn_19_gp, es_autumn_19_gp);
+const WLED_DECLARE_PALETTE(wled_BlacK_Blue_Magenta_White_gp, BlacK_Blue_Magenta_White_gp);
+const WLED_DECLARE_PALETTE(wled_BlacK_Magenta_Red_gp, BlacK_Magenta_Red_gp);
+const WLED_DECLARE_PALETTE(wled_BlacK_Red_Magenta_Yellow_gp, BlacK_Red_Magenta_Yellow_gp);
+const WLED_DECLARE_PALETTE(wled_Blue_Cyan_Yellow_gp, Blue_Cyan_Yellow_gp);
+const WLED_DECLARE_PALETTE(wled_Orange_Teal_gp, Orange_Teal_gp);
+const WLED_DECLARE_PALETTE(wled_Tiamat_gp, Tiamat_gp);
+const WLED_DECLARE_PALETTE(wled_April_Night_gp, April_Night_gp);
+const WLED_DECLARE_PALETTE(wled_Orangery_gp, Orangery_gp);
+const WLED_DECLARE_PALETTE(wled_C9_gp, C9_gp);
+const WLED_DECLARE_PALETTE(wled_Sakura_gp, Sakura_gp);
+const WLED_DECLARE_PALETTE(wled_Aurora_gp, Aurora_gp);
+const WLED_DECLARE_PALETTE(wled_Atlantica_gp, Atlantica_gp);
+const WLED_DECLARE_PALETTE(wled_C9_2_gp, C9_2_gp);
+const WLED_DECLARE_PALETTE(wled_C9_new_gp, C9_new_gp);
+const WLED_DECLARE_PALETTE(wled_temperature_gp, temperature_gp);
+const WLED_DECLARE_PALETTE(wled_retro_clown_gp, retro_clown_gp);
+const WLED_DECLARE_PALETTE(wled_candy_gp, candy_gp);
+const WLED_DECLARE_PALETTE(wled_toxy_reaf_gp, toxy_reaf_gp);
+const WLED_DECLARE_PALETTE(wled_fairy_reaf_gp, fairy_reaf_gp);
+const WLED_DECLARE_PALETTE(wled_semi_blue_gp, semi_blue_gp);
+const WLED_DECLARE_PALETTE(wled_pink_candy_gp, pink_candy_gp);
+const WLED_DECLARE_PALETTE(wled_red_reaf_gp, red_reaf_gp);
+const WLED_DECLARE_PALETTE(wled_aqua_flash_gp, aqua_flash_gp);
+const WLED_DECLARE_PALETTE(wled_yelblu_hot_gp, yelblu_hot_gp);
+const WLED_DECLARE_PALETTE(wled_lite_light_gp, lite_light_gp);
+const WLED_DECLARE_PALETTE(wled_red_flash_gp, red_flash_gp);
+const WLED_DECLARE_PALETTE(wled_blink_red_gp, blink_red_gp);
+const WLED_DECLARE_PALETTE(wled_red_shift_gp, red_shift_gp);
+const WLED_DECLARE_PALETTE(wled_red_tide_gp, red_tide_gp);
+const WLED_DECLARE_PALETTE(wled_candy2_gp, candy2_gp);
+const WLED_DECLARE_PALETTE(wled_trafficlight_gp, trafficlight_gp);
+const WLED_DECLARE_PALETTE(wled_Aurora2_gp, Aurora2_gp);
+
+const color_palette_t *wled_color_palettes[] = {
+	&wled_ib_jul01_gp,
+	&wled_es_vintage_57_gp,
+	&wled_es_vintage_01_gp,
+	&wled_es_rivendell_15_gp,
+	&wled_rgi_15_gp,
+	&wled_retro2_16_gp,
+	&wled_Analogous_1_gp,
+	&wled_es_pinksplash_08_gp,
+	&wled_es_ocean_breeze_036_gp,
+	&wled_departure_gp,
+	&wled_es_landscape_64_gp,
+	&wled_es_landscape_33_gp,
+	&wled_rainbowsherbet_gp,
+	&wled_gr65_hult_gp,
+	&wled_gr64_hult_gp,
+	&wled_GMT_drywet_gp,
+	&wled_ib15_gp,
+	&wled_Tertiary_01_gp,
+	&wled_lava_gp,
+	&wled_fierce_ice_gp,
+	&wled_Colorfull_gp,
+	&wled_Pink_Purple_gp,
+	&wled_Sunset_Real_gp,
+	&wled_Sunset_Yellow_gp,
+	&wled_Beech_gp,
+	&wled_Another_Sunset_gp,
+	&wled_es_autumn_19_gp,
+	&wled_BlacK_Blue_Magenta_White_gp,
+	&wled_BlacK_Magenta_Red_gp,
+	&wled_BlacK_Red_Magenta_Yellow_gp,
+	&wled_Blue_Cyan_Yellow_gp,
+	&wled_Orange_Teal_gp,
+	&wled_Tiamat_gp,
+	&wled_April_Night_gp,
+	&wled_Orangery_gp,
+	&wled_C9_gp,
+	&wled_Sakura_gp,
+	&wled_Aurora_gp,
+	&wled_Atlantica_gp,
+	&wled_C9_2_gp,
+	&wled_C9_new_gp,
+	&wled_temperature_gp,
+	&wled_retro_clown_gp,
+	&wled_candy_gp,
+	&wled_toxy_reaf_gp,
+	&wled_fairy_reaf_gp,
+	&wled_semi_blue_gp,
+	&wled_pink_candy_gp,
+	&wled_red_reaf_gp,
+	&wled_aqua_flash_gp,
+	&wled_yelblu_hot_gp,
+	&wled_lite_light_gp,
+	&wled_red_flash_gp,
+	&wled_blink_red_gp,
+	&wled_red_shift_gp,
+	&wled_red_tide_gp,
+	&wled_candy2_gp,
+	&wled_trafficlight_gp,
+	&wled_Aurora2_gp
+};

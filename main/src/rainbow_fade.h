@@ -13,3 +13,4 @@ void rainbow_fade_set_cycle_time(unsigned long cycle_time_ms);
 void rainbow_fade_set_enable(bool enable);
 void rainbow_fade_set_phase_shift_enable(bool enable);
 void rainbow_fade_set_rssi_delay_model(const neighbour_rssi_delay_model_t *model);
+void rainbow_fade_set_color_palette_index(unsigned int palette_idx);
