@@ -36,7 +36,7 @@ static const unsigned int bq24295_input_current_lookup_ma[] = {
 	100, 150, 500, 900, 1000, 1500, 2000, 3000
 };
 
-const char *TAG = "bq24295";
+static const char *TAG = "bq24295";
 
 static esp_err_t bq24295_r(bq24295_t *charger, uint8_t reg, uint8_t *val) {
 	return i2c_bus_read_byte(charger->i2c_bus, BQ24295_ADDRESS, reg, val);
