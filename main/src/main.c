@@ -84,7 +84,7 @@ void app_main(void) {
 
 	platform_t *platform;
 	ESP_ERROR_CHECK(platform_probe(&platform));
-	ESP_LOGI(TAG, "Detected platform: %s", platform->name);
+	ESP_LOGI(TAG, "Detected platform: %s", platform->def->name);
 
 	ESP_ERROR_CHECK(power_control_init(platform->charger, platform->gauge));
 
