@@ -40,11 +40,14 @@ static unsigned int wled_color_palette_get_num_steps(const color_palette_t *pale
 	return max_step;
 }
 
-static unsigned int wled_get_color_idx_before_pos(const color_palette_t *palette, unsigned int pos) {
+static unsigned int wled_get_color_idx_before_step(const color_palette_t *palette, unsigned int step) {
 	const uint8_t *palette_data = palette->data;
 
 	for (int i = 1; i < palette->num_colors; i++) {
-		if (WLED_STEP(palette_data, i) > pos) {
+		if (WLED_STEP(palette_data, i) == step) {
+			return i;
+		}
+		if (i > 0 && WLED_STEP(palette_data, i) > step) {
 			return i - 1;
 		}
 	}
@@ -52,11 +55,11 @@ static unsigned int wled_get_color_idx_before_pos(const color_palette_t *palette
 	return palette->num_colors - 1;
 }
 
-static unsigned int wled_get_color_idx_after_pos(const color_palette_t *palette, unsigned int pos) {
+static unsigned int wled_get_color_idx_after_step(const color_palette_t *palette, unsigned int step) {
 	const uint8_t *palette_data = palette->data;
 
 	for (int i = 1; i < palette->num_colors; i++) {
-		if (WLED_STEP(palette_data, i) >= pos) {
+		if (WLED_STEP(palette_data, i) > step) {
 			return i;
 		}
 	}
@@ -76,9 +79,9 @@ static void wled_color_palette_get_color_at(color_t *color, const color_palette_
 	const uint8_t *palette_data = palette->data;
 
 	unsigned int num_steps = wled_color_palette_get_num_steps(palette);
-	unsigned int step_in_palette = DIV_ROUND((uint32_t)pos * num_steps, COLOR_PALETTE_LENGTH);
-	unsigned int idx_before = wled_get_color_idx_before_pos(palette, step_in_palette);
-	unsigned int idx_after = wled_get_color_idx_after_pos(palette, step_in_palette);
+	unsigned int step_in_palette = (uint32_t)pos * num_steps / COLOR_PALETTE_LENGTH;
+	unsigned int idx_before = wled_get_color_idx_before_step(palette, step_in_palette);
+	unsigned int idx_after = wled_get_color_idx_after_step(palette, step_in_palette);
 
 	rgb16_t color_before, color_after;
 	wled_get_color(&color_before, palette, idx_before);
@@ -104,6 +107,8 @@ static void wled_color_palette_get_color_at(color_t *color, const color_palette_
 		uint16_t blend_progress = 0;
 		if (pos_after > pos_before && pos >= pos_before) {
 			blend_progress = (uint32_t)pos_progress * COLOR_BLEND_MAX / pos_length;
+		} else {
+			ESP_LOGD(TAG, "Can't compute blend progress, %u, %u, %u", pos_after, pos_before, pos);
 		}
 
 		ESP_LOGV(TAG, "Blending %u -> %u, pos: %u, blend: %u", idx_before, idx_after, pos, blend_progress);
