@@ -80,3 +80,74 @@ Depending on the exact vendor and manufacturer some ESP32-C3 MINI modules can co
 For those modules it might be ncessary to use the strapping pins exposed via header J2 on the Blinkekatze. If any problems are encoutered during flashing it might help
 to short IO9 on J2 to GND and - with IO9 still connected to GND - connect EN to GND and disconect it again. The connection between IO9 and GND can now be removed.
 This puts the ESP32-C3 into USB boot mode. From here on flashing as normal should be possible.
+
+# Color palette IDs
+
+| ID | Palette |
+|---|---|
+| 0 | CloudColors_p |
+| 1 | LavaColors_p |
+| 2 | OceanColors_p |
+| 3 | ForestColors_p |
+| 4 | wled_ib_jul01_gp |
+| 5 | wled_es_vintage_57_gp |
+| 6 | wled_es_vintage_01_gp |
+| 7 | wled_es_rivendell_15_gp |
+| 8 | wled_rgi_15_gp |
+| 9 | wled_retro2_16_gp |
+| 10 | wled_Analogous_1_gp |
+| 11 | wled_es_pinksplash_08_gp |
+| 12 | wled_es_ocean_breeze_036_gp |
+| 13 | wled_departure_gp |
+| 14 | wled_es_landscape_64_gp |
+| 15 | wled_es_landscape_33_gp |
+| 16 | wled_rainbowsherbet_gp |
+| 17 | wled_gr65_hult_gp |
+| 18 | wled_gr64_hult_gp |
+| 19 | wled_GMT_drywet_gp |
+| 20 | wled_ib15_gp |
+| 21 | wled_Tertiary_01_gp |
+| 22 | wled_lava_gp |
+| 23 | wled_fierce_ice_gp |
+| 24 | wled_Colorfull_gp |
+| 25 | wled_Pink_Purple_gp |
+| 26 | wled_Sunset_Real_gp |
+| 27 | wled_Sunset_Yellow_gp |
+| 28 | wled_Beech_gp |
+| 29 | wled_Another_Sunset_gp |
+| 30 | wled_es_autumn_19_gp |
+| 31 | wled_BlacK_Blue_Magenta_White_gp |
+| 32 | wled_BlacK_Magenta_Red_gp |
+| 33 | wled_BlacK_Red_Magenta_Yellow_gp |
+| 34 | wled_Blue_Cyan_Yellow_gp |
+| 35 | wled_Orange_Teal_gp |
+| 36 | wled_Tiamat_gp |
+| 37 | wled_April_Night_gp |
+| 38 | wled_Orangery_gp |
+| 39 | wled_C9_gp |
+| 40 | wled_Sakura_gp |
+| 41 | wled_Aurora_gp |
+| 42 | wled_Atlantica_gp |
+| 43 | wled_C9_2_gp |
+| 44 | wled_C9_new_gp |
+| 45 | wled_temperature_gp |
+| 46 | wled_retro_clown_gp |
+| 47 | wled_candy_gp |
+| 48 | wled_toxy_reaf_gp |
+| 49 | wled_fairy_reaf_gp |
+| 50 | wled_semi_blue_gp |
+| 51 | wled_pink_candy_gp |
+| 52 | wled_red_reaf_gp |
+| 53 | wled_aqua_flash_gp |
+| 54 | wled_yelblu_hot_gp |
+| 55 | wled_lite_light_gp |
+| 56 | wled_red_flash_gp |
+| 57 | wled_blink_red_gp |
+| 58 | wled_red_shift_gp |
+| 59 | wled_red_tide_gp |
+| 60 | wled_candy2_gp |
+| 61 | wled_trafficlight_gp |
+| 62 | wled_Aurora2_gp |
+| 63 | PartyColors_gc22 |
+| 64 | RainbowColors_gc22 |
+| 65 | RainbowStripeColors_gc22 |
