@@ -54,7 +54,7 @@ static void default_color_update(void *priv) {
 }
 
 void default_color_init(platform_t *platform) {
-	default_color.default_color.v = platform->default_brightness;
+	default_color.default_color.v = HSV_VAL_MAX;
 	scheduler_task_init(&default_color.update_task);
 	scheduler_schedule_task_relative(&default_color.update_task, default_color_update, NULL, MS_TO_US(1000));
 }

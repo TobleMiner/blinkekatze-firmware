@@ -6,6 +6,7 @@
 
 #include <esp_log.h>
 
+#include "brightness.h"
 #include "color.h"
 #include "platform_blinkekatze.h"
 #include "platform_lacklight.h"
@@ -26,7 +27,7 @@ static platform_def_t *platforms[] = {
 void platform_init(platform_t *plat, const platform_def_t *def) {
 	memset(plat, 0, sizeof(*plat));
 	plat->def = def;
-	plat->default_brightness = HSV_VAL_MAX;
+	plat->default_brightness = BRIGHTNESS_MAX;
 }
 
 static esp_err_t platform_probe_(const platform_def_t *def, platform_t **platform) {

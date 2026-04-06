@@ -3,6 +3,7 @@ set(srcs
 	src/bq24295.c
 	src/bq27546.c
 	${BUILD_DIR}/bq27546_inr18650_df.c
+	src/brightness.c
 	src/chacha20.c
 	src/color.c
 	src/color_channel_offset.c

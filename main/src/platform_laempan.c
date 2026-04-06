@@ -9,6 +9,7 @@
 #include <esp_err.h>
 #include <esp_log.h>
 
+#include "brightness.h"
 #include "color.h"
 #include "embedded_files.h"
 #include "util.h"
@@ -305,7 +306,7 @@ esp_err_t platform_laempan_probe(platform_t **ret) {
 	configure_ledc_channel(LEDC_CHANNEL_3, GPIO_WHITE);
 
 	platform_init(&laempan->base, &platform_laempan);
-	laempan->base.default_brightness = HSV_VAL_MAX / 3;
+	laempan->base.default_brightness = BRIGHTNESS_MAX / 3;
 	laempan->white_brightness = 400;
 	*ret = &laempan->base;
 

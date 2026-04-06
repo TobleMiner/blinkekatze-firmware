@@ -8,6 +8,7 @@
 #include <esp_system.h>
 #include <argtable3/argtable3.h>
 
+#include "brightness.h"
 #include "color_channel_offset.h"
 #include "color_override.h"
 #include "default_color.h"
@@ -1031,6 +1032,30 @@ static int set_color_palette(int argc, char **argv) {
 	return 0;
 }
 
+static struct {
+	struct arg_int *brightness;
+	struct arg_end *end;
+} set_brightness_args;
+
+static int set_brightness(int argc, char **argv) {
+	set_brightness_args.brightness->ival[0] = -1;
+
+	int errors = arg_parse(argc, argv, (void **)&set_brightness_args);
+	if (errors) {
+		arg_print_errors(stderr, set_brightness_args.end, argv[0]);
+		return 1;
+	}
+
+	int brightness = set_brightness_args.brightness->ival[0];
+	if (brightness < 0 || brightness > 255) {
+		fprintf(stderr, "Brightness most be [0 - 255]\r\n");
+		return 1;
+	}
+
+	brightness_set_brightness((unsigned int)brightness);
+	return 0;
+}
+
 #define ADD_COMMAND(name_, help_, func_) \
 	ADD_COMMAND_ARGS(name_, help_, func_, NULL)
 
@@ -1338,6 +1363,14 @@ esp_err_t shell_init(bonk_t *bonk_, platform_t *platform_) {
 			 "Set colot palette to use",
 			 set_color_palette,
 			 &set_color_palette_args);
+
+	set_brightness_args.brightness = arg_int1(NULL, NULL, "brightness", "Global brightnes (0 - 255)");
+	set_brightness_args.end = arg_end(1);
+
+	ADD_COMMAND_ARGS("set_brightness",
+			 "Set global brightness (0 - 255)",
+			 set_brightness,
+			 &set_brightness_args);
 
 	esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 	esp_err_t err = esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl);

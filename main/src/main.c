@@ -22,6 +22,7 @@
 #include "bq24295.h"
 #include "bq27546.h"
 #include "bq27546_dataflash.h"
+#include "brightness.h"
 #include "color_override.h"
 #include "default_color.h"
 #include "embedded_files.h"
@@ -108,6 +109,7 @@ void app_main(void) {
 
 	rainbow_fade_init();
 
+	brightness_init(platform);
 	default_color_init(platform);
 
 	state_of_charge_init(platform->gauge);
@@ -177,6 +179,9 @@ void app_main(void) {
 					case WIRELESS_PACKET_TYPE_REBOOT:
 						reboot_rx(&packet);
 						break;
+					case WIRELESS_PACKET_TYPE_BRIGHTNESS:
+						brightness_rx(&packet);
+						break;
 					default:
 						if (!platform_handle_packet(platform, packet_type, &packet)) {
 							ESP_LOGD(TAG, "Unknown packet type 0x%02x", packet_type);
@@ -199,8 +204,7 @@ void app_main(void) {
 			color.hsv = hsv;
 			rainbow_fade_apply(&color);
 			hsv = *color_to_hsv(&color);
-			hsv.v = DIV_ROUND(hsv.v, 2);
-//			ESP_LOGI(TAG, "HSV: %05u, %05u, %05u", hsv.h, hsv.s, hsv.v);
+			brightness_apply(&hsv);
 			bonk_apply(&bonk, &hsv);
 			squish_apply(&squish, &hsv);
 			state_of_charge_apply(&hsv);
