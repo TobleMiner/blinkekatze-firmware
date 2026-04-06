@@ -2,6 +2,10 @@
 
 #include "color_palette.h"
 
+extern const color_palette_t wled_CloudColors_p;
+extern const color_palette_t wled_LavaColors_p;
+extern const color_palette_t wled_OceanColors_p;
+extern const color_palette_t wled_ForestColors_p;
 extern const color_palette_t wled_ib_jul01_gp;
 extern const color_palette_t wled_es_vintage_57_gp;
 extern const color_palette_t wled_es_vintage_01_gp;
@@ -62,5 +66,9 @@ extern const color_palette_t wled_candy2_gp;
 extern const color_palette_t wled_trafficlight_gp;
 extern const color_palette_t wled_Aurora2_gp;
 
-#define WLED_NUM_PALETTES 59
+extern const color_palette_t wled_PartyColors_gc22;
+extern const color_palette_t wled_RainbowColors_gc22;
+extern const color_palette_t wled_RainbowStripeColors_gc22;
+
+#define WLED_NUM_PALETTES 66
 extern const color_palette_t *wled_color_palettes[];
